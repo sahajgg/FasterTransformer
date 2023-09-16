@@ -14,6 +14,9 @@
  * limitations under the License.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+
 #ifndef CUDART_VERSION
 #error CUDART_VERSION Undefined!
 #endif

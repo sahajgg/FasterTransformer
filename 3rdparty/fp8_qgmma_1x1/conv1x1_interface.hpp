@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #ifndef CONV1x1_INTERFACE_HPP_
 #define CONV1x1_INTERFACE_HPP_
 

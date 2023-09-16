@@ -17,6 +17,7 @@
 #include "src/fastertransformer/kernels/layernorm_fp8_kernels.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
 #include "src/fastertransformer/utils/cuda_bf16_wrapper.h"
+#include "src/fastertransformer/utils/cuda_type_utils.cuh"
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <cuda_fp16.h>
 
@@ -836,8 +837,8 @@ __global__ void generalFP8IOAddBiasResidualPostLayerNormV2(GeneralFP8IOAddBiasRe
     fp8x4_e4m3_to_bfloat2(&val_0, &val_1, &residual_ptr[blockIdx.x * n + threadIdx.x]);
     val_0 = hmul2(val_0, residual_scalar);
     val_1 = hmul2(val_1, residual_scalar);
-    local_outs[0] += val_0;
-    local_outs[1] += val_1;
+    local_outs[0] = local_outs[0] + val_0;
+    local_outs[1] = local_outs[1] + val_1;
 
     if (bias_ptr != nullptr) {
         local_outs[0] = hadd2(local_outs[0], bias_ptr[index_0]);
@@ -921,8 +922,8 @@ __global__ void generalFP8IOAddBiasResidualPostLayerNormV3(GeneralFP8IOAddBiasRe
         fp8x4_e4m3_to_bfloat2(&val_0, &val_1, &residual_ptr[row_id * n + i * blockDim.x + threadIdx.x]);
         val_0 = hmul2(val_0, residual_scalar);
         val_1 = hmul2(val_1, residual_scalar);
-        local_outs[i][0] += val_0;
-        local_outs[i][1] += val_1;
+        local_outs[i][0] = local_outs[i][0] + val_0;
+        local_outs[i][1] = local_outs[i][1] + val_1;
 
         if (bias_ptr != nullptr) {
             local_outs[i][0] = hadd2(local_outs[i][0], __ldg(bias_ptr + 2 * (i * blockDim.x + threadIdx.x) + 0));
