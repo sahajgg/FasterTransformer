@@ -379,7 +379,7 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
 #ifdef ENABLE_BF16
         else if constexpr (std::is_same<TDataType, __nv_bfloat16>::value) {
             // bf16
-            res = __hadd(res0, __hadd(res1, T[threadIdx.x][ty + threadIdx.y]));
+            // res = __hadd(res0, __hadd(res1, T[threadIdx.x][ty + threadIdx.y]));
         }
 #endif
         else if constexpr (std::is_same<TDataType, int8_t>::value || std::is_same<TDataType, uint8_t>::value) {

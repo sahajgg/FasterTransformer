@@ -49,17 +49,17 @@ __inline__ __device__ T gelu(T x)
     return (T)(f_x * cdf);
 }
 
-template<>
-__inline__ __device__ __nv_bfloat162 gelu(__nv_bfloat162 val)
-{
-    __nv_bfloat162 val_pow3 = __hmul2(val, __hmul2(val, val));
-    float2         tmp_pow  = cuda_cast<float2>(val_pow3);
-    float2         tmp      = cuda_cast<float2>(val);
+// template<>
+// __inline__ __device__ __nv_bfloat162 gelu(__nv_bfloat162 val)
+// {
+//     __nv_bfloat162 val_pow3 = __hmul2(val, __hmul2(val, val));
+//     float2         tmp_pow  = cuda_cast<float2>(val_pow3);
+//     float2         tmp      = cuda_cast<float2>(val);
 
-    tmp.x = 0.5f * (1.0f + tanh_opt((0.7978845608028654f * (tmp.x + 0.044715f * tmp_pow.x))));
-    tmp.y = 0.5f * (1.0f + tanh_opt((0.7978845608028654f * (tmp.y + 0.044715f * tmp_pow.y))));
-    return __hmul2(val, __float22bfloat162_rn(tmp));
-}
+//     tmp.x = 0.5f * (1.0f + tanh_opt((0.7978845608028654f * (tmp.x + 0.044715f * tmp_pow.x))));
+//     tmp.y = 0.5f * (1.0f + tanh_opt((0.7978845608028654f * (tmp.y + 0.044715f * tmp_pow.y))));
+//     return __hmul2(val, __float22bfloat162_rn(tmp));
+// }
 
 template<typename T1, typename T2>
 __global__ void FP8AddBiasGelu(FP8ActivationParam<T1, T2> param)
