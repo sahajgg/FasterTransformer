@@ -29,11 +29,6 @@ inline __device__ T ldg(const T* val) {
     return __ldg(val);
 }
 
-template<typename T>
-inline __device__ T __ldg(const T* val) {
-    return __ldg(val);
-}
-
 #if ENABLE_BF16
 template<>
 inline __device__ __nv_bfloat162 ldg(const __nv_bfloat162* val) {

@@ -17,7 +17,6 @@
 #include "src/fastertransformer/kernels/layernorm_fp8_kernels.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
 #include "src/fastertransformer/utils/cuda_bf16_wrapper.h"
-#include "src/fastertransformer/utils/cuda_type_utils.cuh"
 #include "src/fastertransformer/utils/cuda_utils.h"
 #include <cuda_fp16.h>
 
@@ -926,8 +925,8 @@ __global__ void generalFP8IOAddBiasResidualPostLayerNormV3(GeneralFP8IOAddBiasRe
         local_outs[i][1] = local_outs[i][1] + val_1;
 
         if (bias_ptr != nullptr) {
-            local_outs[i][0] = hadd2(local_outs[i][0], __ldg(bias_ptr + 2 * (i * blockDim.x + threadIdx.x) + 0));
-            local_outs[i][1] = hadd2(local_outs[i][1], __ldg(bias_ptr + 2 * (i * blockDim.x + threadIdx.x) + 1));
+            local_outs[i][0] = hadd2(local_outs[i][0], ldg(bias_ptr + 2 * (i * blockDim.x + threadIdx.x) + 0));
+            local_outs[i][1] = hadd2(local_outs[i][1], ldg(bias_ptr + 2 * (i * blockDim.x + threadIdx.x) + 1));
         }
 
         val_0 = hadd2(local_outs[i][0], local_outs[i][1]);
