@@ -64,9 +64,7 @@ protected:
     T*      deberta_out_buffer_     = nullptr;
 
 public:
-    ZppEncoder(size_t                      max_batch_size,
-               size_t                      max_seq_len,
-               size_t                      head_num,
+    ZppEncoder(size_t                      head_num,
                size_t                      size_per_head,
                size_t                      inter_size,
                size_t                      num_layer,
@@ -83,8 +81,8 @@ public:
                  const std::vector<Tensor>*    input_tensors,
                  const std::vector<Tensor>*    pos_query_cache,
                  const std::vector<Tensor>*    pos_key_cache,
-                 const ZppEncoderWeight<T>*    deberta_weights);
-    void forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* deberta_weights);
+                 const ZppEncoderWeight<T>*    zppencoder_weights);
+    void forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* zppencoder_weights);
 };
 
 }  // namespace fastertransformer

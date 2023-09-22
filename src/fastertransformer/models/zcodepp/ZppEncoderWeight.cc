@@ -40,9 +40,9 @@ ZppEncoderWeight<T>::ZppEncoderWeight(const size_t hidden_units,
     }
 
     setWeightPtr();
-    deberta_layer_weights.reserve(num_layer_);
+    zpp_encoder_layer_weights.reserve(num_layer_);
     for (int i = 0; i < num_layer_; i++) {
-        deberta_layer_weights.push_back(
+        zpp_encoder_layer_weights.push_back(
             ZppEncoderLayerWeight<T>(hidden_units_, inter_size_));
     }
     FT_LOG_DEBUG("%s stop", __PRETTY_FUNCTION__);
@@ -52,7 +52,7 @@ template<typename T>
 ZppEncoderWeight<T>::~ZppEncoderWeight()
 {
     if (is_maintain_buffer == true) {
-        deberta_layer_weights.clear();
+        zpp_encoder_layer_weights.clear();
         for (int i = 0; i < weights_num_; i++) {
             deviceFree(weights_ptr[i]);
         }
@@ -70,12 +70,12 @@ void ZppEncoderWeight<T>::loadModel(std::string dir_path)
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     FtCudaDataType model_file_type = FtCudaDataType::FP16;
 
-    loadWeightFromBin<T>(weights_ptr[0], {(size_t)weights_size[0]}, dir_path + "/encoder.embeddings.word_embeddings.weight.bin", model_file_type);
-    loadWeightFromBin<T>(weights_ptr[1], {(size_t)weights_size[1]}, dir_path + "/encoder.embeddings.LayerNorm.weight.bin", model_file_type);
-    loadWeightFromBin<T>(weights_ptr[2], {(size_t)weights_size[2]}, dir_path + "/encoder.embeddings.LayerNorm.bias.bin", model_file_type);
+    loadWeightFromBin<T>(weights_ptr[0], {(size_t)weights_size[0]}, dir_path + "/model.e.embeddings.word_embeddings.weight.bin", model_file_type);
+    loadWeightFromBin<T>(weights_ptr[1], {(size_t)weights_size[1]}, dir_path + "/model.e.embeddings.LayerNorm.weight.bin", model_file_type);
+    loadWeightFromBin<T>(weights_ptr[2], {(size_t)weights_size[2]}, dir_path + "/model.e.embeddings.LayerNorm.bias.bin", model_file_type);
 
     for (uint l = 0; l < num_layer_; l++) {
-        deberta_layer_weights[l].loadModel(dir_path + "/encoder.layer." + std::to_string(l) + ".", model_file_type);
+        zpp_encoder_layer_weights[l].loadModel(dir_path + "/model.e.encoder.layer." + std::to_string(l) + ".", model_file_type);
     }
     FT_LOG_DEBUG(__PRETTY_FUNCTION__, " stop");
 }

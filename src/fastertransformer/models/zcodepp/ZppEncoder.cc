@@ -50,9 +50,7 @@ void ZppEncoder<T>::initialize()
 }
 
 template<typename T>
-ZppEncoder<T>::ZppEncoder(size_t                              max_batch_size,
-                          size_t                              max_seq_len,
-                          size_t                              head_num,
+ZppEncoder<T>::ZppEncoder(size_t                              head_num,
                           size_t                              size_per_head,
                           size_t                              inter_size,
                           size_t                              num_layer,
@@ -129,7 +127,7 @@ void ZppEncoder<T>::forward(std::vector<Tensor>*       output_tensors,
                          const std::vector<Tensor>*    input_tensors,
                          const std::vector<Tensor>*    pos_query_cache,
                          const std::vector<Tensor>*    pos_key_cache,
-                         const ZppEncoderWeight<T>*    deberta_weights)
+                         const ZppEncoderWeight<T>*    zppencoder_weights)
 {
     TensorMap input_tensors_map = TensorMap({{"input_ids", input_tensors->at(0)}, {"sequence_lengths", input_tensors->at(1)}});
     for (uint l = 0; l < num_layer_; l++) {
@@ -137,11 +135,11 @@ void ZppEncoder<T>::forward(std::vector<Tensor>*       output_tensors,
         input_tensors_map.insert("pos_key_cache_" + std::to_string(l), pos_key_cache->at(l));
     }
     TensorMap output_tensors_map = TensorMap({{"output_hidden_state", output_tensors->at(0)}});
-    forward(&output_tensors_map, &input_tensors_map, deberta_weights);
+    forward(&output_tensors_map, &input_tensors_map, zppencoder_weights);
 }
 
 template<typename T>
-void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* deberta_weights)
+void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* zppencoder_weights)
 {
     // input_tensors:
     //      input_ids [batch, seqlen]
@@ -151,32 +149,24 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
     // output tensors:
     //      output_hidden_state [batch, seqlen, hidden]
 
-    FT_LOG_DEBUG(__PRETTY_FUNCTION__);
-    FT_CHECK(input_tensors->size() == 2);
     const size_t request_batch_size = input_tensors->at("input_ids").shape[0];
     const size_t request_seq_len    = input_tensors->at("input_ids").shape[1];
-    FT_CHECK(input_tensors->at("input_ids").shape.size() == 2);
-    FT_CHECK(input_tensors->at("sequence_lengths").shape.size() == 1);
-    FT_CHECK(input_tensors->at("pos_query_cache_0").shape.size() == 4);
-    FT_CHECK(input_tensors->at("pos_key_cache_0").shape.size() == 4);
-    FT_CHECK(request_batch_size == input_tensors->at("sequence_lengths").shape[0]);
-    FT_CHECK(request_batch_size == input_tensors->at("pos_query_cache_0").shape[0]);
     allocateBuffer(request_batch_size, request_seq_len);
-
+    
     const int* input_ids        = input_tensors->at("input_ids").getPtr<int>();
     const int* sequence_lengths = input_tensors->at("sequence_lengths").getPtr<int>();
 
     DataType     data_type                 = getTensorType<T>();
     Tensor*      padding_offset_tensor_ptr = nullptr;
     size_t       h_token_num               = 0;
-
     T* deberta_input_ptr;
     T* deberta_output_ptr;
 
+    sync_check_cuda_error();
     // Word embedding layer [batch_size, seq_len] --> [batch_size, seq_len, hidden_size]
     invokeInputIdsWordEmbeddingLookup(
         deberta_emb_buf_,
-        deberta_weights->word_embedding_table,
+        zppencoder_weights->word_embedding_table,
         input_ids,
         request_seq_len,
         request_seq_len,
@@ -185,8 +175,6 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
         stream_
     );
     sync_check_cuda_error();
-
-    //// Padding removal start
     
     // build attention mask from seq len
     invokeBuildEncoderAttentionMask(
@@ -205,38 +193,40 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
                             request_batch_size,
                             request_seq_len,
                             stream_);
-
-    // full input embeddings --> padding-entries-removed input embeddings
-    invokeRemovePadding(
-        deberta_in_buffer_, deberta_emb_buf_, padding_offset_, h_token_num, head_num_ * size_per_head_, stream_);
     sync_check_cuda_error();
 
-    padding_offset_tensor_ptr =
-        new Tensor(MEMORY_GPU, TYPE_INT32, std::vector<size_t>{h_token_num}, padding_offset_);
-    
-    //// Padding removal done
+    // full input embeddings --> padding-entries-removed input embeddings
+    invokeRemovePadding(deberta_in_buffer_, 
+                        deberta_emb_buf_, 
+                        padding_offset_, 
+                        h_token_num, 
+                        head_num_ * size_per_head_, 
+                        stream_);
+    sync_check_cuda_error();
+
+    padding_offset_tensor_ptr = new Tensor(MEMORY_GPU, TYPE_INT32, std::vector<size_t>{h_token_num}, padding_offset_);
 
     // LayerNorm on word embeddings (do this after padding removing is better)
     invokeGeneralLayerNorm(deberta_in_buffer_,
                             deberta_in_buffer_,
-                            deberta_weights->word_embedding_layernorm_weights.gamma,
-                            deberta_weights->word_embedding_layernorm_weights.beta,
+                            zppencoder_weights->word_embedding_layernorm_weights.gamma,
+                            zppencoder_weights->word_embedding_layernorm_weights.beta,
                             layernorm_eps_,
                             h_token_num,
                             hidden_units_,
                             (float*)nullptr,
                             0,
                             stream_);
+    sync_check_cuda_error();
 
     deberta_input_ptr       = deberta_in_buffer_;
     deberta_output_ptr      = deberta_out_buffer_;
-    sync_check_cuda_error();
-
+    
     // Encoder layers
     for (uint l = 0; l < num_layer_; l++) {
             T*                          from_tensor  = l == 0 ? deberta_input_ptr : deberta_output_ptr;
             T*                          out_tensor   = deberta_output_ptr;
-        const ZppEncoderLayerWeight<T>& layer_weight = deberta_weights->deberta_layer_weights[l];
+        const ZppEncoderLayerWeight<T>& layer_weight = zppencoder_weights->zpp_encoder_layer_weights[l];
 
         // Attention
         {
@@ -289,12 +279,17 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
             TensorMap ffn_input_tensors(
                 {{"ffn_input",
                     Tensor{MEMORY_GPU,
-                            data_type,
-                            std::vector<size_t>{h_token_num, hidden_units_},
-                            attn_out_buf_}}});
+                        data_type,
+                        std::vector<size_t>{h_token_num, hidden_units_},
+                        attn_out_buf_}}}
+            );
             TensorMap ffn_output_tensors(
                 {{"ffn_output",
-                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, out_tensor}}});
+                    Tensor{MEMORY_GPU, 
+                        data_type, 
+                        std::vector<size_t>{h_token_num, hidden_units_}, 
+                        out_tensor}}}
+            );
             ffn_layer_->forward(&ffn_output_tensors, &ffn_input_tensors, &layer_weight.ffn_weights);
         }
 
@@ -308,7 +303,6 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
                                         hidden_units_,
                                         stream_);
         sync_check_cuda_error();
-
     }  // transformer layers
 
     // post process (rebuild padding)

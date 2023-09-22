@@ -64,3 +64,12 @@ void invokeInputIdsWordEmbeddingLookup(T*                    from_tensor,
     dim3       block(min(hidden_units, 512));
     WordEmbLookup<T><<<grid, block, 0, stream>>>(from_tensor, embedding_table, input_ids, length, max_length, batch_size, hidden_units);
 }
+
+template void invokeInputIdsWordEmbeddingLookup(half*                    from_tensor,
+                                                const half*              embedding_table,
+                                                const int*               input_ids,
+                                                const int                length,
+                                                const int                max_length,
+                                                const int                batch_size,
+                                                const int                hidden_units,
+                                                cudaStream_t             stream);

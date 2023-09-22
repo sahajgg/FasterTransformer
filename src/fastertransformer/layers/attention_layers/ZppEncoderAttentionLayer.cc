@@ -65,7 +65,8 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                   k_buf_,
                   v_buf_,
                   nullptr};
-    
+    sync_check_cuda_error();
+
     // Note: Here, we assume the weights of each time may be different.
     // If we can preprocess these weights before inference, we can reduce the overhead
     // caused by cudaMemcpyAsync
@@ -82,6 +83,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                     (void* const*)batch_qkv_buf_ptr_,
                                     n,
                                     3);
+    sync_check_cuda_error();
 
     // add QKV bias (bias optional, can be nullptr) & permute
     // [batch, seq_len, num_heads*head_size] or [token_num, num_heads*head_size] --> [batch, num_heads, seq_len,
@@ -150,7 +152,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * request_seq_len,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-
+    sync_check_cuda_error();
     // above is content-to-content "c2c" attention, Qc*Kc^T
     // similarly, disentangled attention has two extra type of attentions (replacing the normal relative attention bias
     // w/ real attentions)
@@ -172,7 +174,8 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * 2 * s,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-    
+    sync_check_cuda_error();
+
     // compute position-to-content "p2c" attention,  Kc*Qr^T [batch, num_heads, seq_len, 2*attention_span]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
                                         CUBLAS_OP_N,
@@ -190,7 +193,8 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * 2 * s,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-
+    sync_check_cuda_error();
+    
     // gather & add c2c+c2p+p2c. In-place operation
     invokeDisentangledAttention(
         qk_buf_, qk_buf_, QcKr_buf_, KcQr_buf_, request_batch_size * head_num_, request_seq_len, s, stream_);

@@ -29,7 +29,7 @@ struct ZppEncoderWeight {
                   const size_t vocab_size,
                   const size_t num_layer);
     ~ZppEncoderWeight();
-    std::vector<ZppEncoderLayerWeight<T>> deberta_layer_weights;
+    std::vector<ZppEncoderLayerWeight<T>> zpp_encoder_layer_weights;
     const T*                           word_embedding_table = nullptr;
     LayerNormWeight<T>                 word_embedding_layernorm_weights;
 
