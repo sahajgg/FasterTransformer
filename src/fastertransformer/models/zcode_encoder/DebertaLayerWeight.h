@@ -27,13 +27,23 @@
 namespace fastertransformer {
 
 template<typename T>
-struct ZppEncoderLayerWeight {
+struct ZcodeEncoderLayerWeight {
 
-    ZppEncoderLayerWeight() = default;
-    ZppEncoderLayerWeight(const size_t hidden_units, const size_t inter_size);
-    ~ZppEncoderLayerWeight();
-    ZppEncoderLayerWeight(const ZppEncoderLayerWeight& other);
-    ZppEncoderLayerWeight& operator=(const ZppEncoderLayerWeight& other);
+    ZcodeEncoderLayerWeight() = default;
+    ZcodeEncoderLayerWeight(const size_t hidden_units,
+                       const size_t inter_size,
+                       const size_t tensor_para_size,
+                       const size_t tensor_para_rank);
+    ZcodeEncoderLayerWeight(const int hidden_units, const int inter_size): ZcodeEncoderLayerWeight(hidden_units, inter_size, 1, 0)
+    {
+    }
+    ~ZcodeEncoderLayerWeight();
+    ZcodeEncoderLayerWeight(const ZcodeEncoderLayerWeight& other);
+    ZcodeEncoderLayerWeight& operator=(const ZcodeEncoderLayerWeight& other);
+
+#ifdef SPARSITY_ENABLED
+    void compress_weights(cublasMMWrapper& cublas_wrapper, int hidden_dim);
+#endif
 
     AttentionWeight<T> attention_weights;
     LayerNormWeight<T> attn_layernorm_weights;
@@ -47,8 +57,12 @@ private:
 
     size_t                                       hidden_units_;
     size_t                                       inter_size_;
+    size_t                                       tensor_para_size_;
+    size_t                                       tensor_para_rank_;
     bool                                         is_maintain_buffer_ = false;
     std::unordered_map<std::string, FtWeight<T>> weights_ptr_;
+    T*                                           sp_weights_ptr_[6];
+    bool                                         is_maintain_sp_buffer_ = false;
 };
 
 }  // namespace fastertransformer

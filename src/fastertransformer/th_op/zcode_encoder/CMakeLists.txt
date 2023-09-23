@@ -12,6 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-add_library(th_zcodepp STATIC ZcodeppOp.cc)
-set_property(TARGET th_zcodepp PROPERTY POSITION_INDEPENDENT_CODE  ON)
-target_link_libraries(th_zcodepp PRIVATE "${TORCH_LIBRARIES}" ZppEncoder nccl_utils th_utils)
+add_library(th_zcode_encoder STATIC DebertaOp.cc)
+set_property(TARGET th_zcode_encoder PROPERTY POSITION_INDEPENDENT_CODE  ON)
+target_link_libraries(th_zcode_encoder PRIVATE "${TORCH_LIBRARIES}" ZcodeEncoder nccl_utils th_utils)

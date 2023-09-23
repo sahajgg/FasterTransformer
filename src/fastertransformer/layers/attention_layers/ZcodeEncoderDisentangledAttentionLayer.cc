@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-#include "src/fastertransformer/layers/attention_layers/ZppEncoderAttentionLayer.h"
+#include "src/fastertransformer/layers/attention_layers/ZcodeEncoderDisentangledAttentionLayer.h"
 #include "src/fastertransformer/kernels/disentangled_attention_kernels.h"
 #include "src/fastertransformer/kernels/unfused_attention_kernels.h"
 
 namespace fastertransformer {
 
 template<typename T>
-void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tensors,
-                                          TensorMap*                input_tensors,
-                                          const AttentionWeight<T>* attention_weights)
+void ZcodeEncoderDisentangledAttentionLayer<T>::forward(TensorMap*                output_tensors,
+                                            TensorMap*                input_tensors,
+                                            const AttentionWeight<T>* attention_weights)
 {
     // input_tensors:
     //      input_query [token_num, d_model],
@@ -38,81 +38,99 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     const size_t request_batch_size = input_tensors->at("attention_mask").shape[0];
     const size_t request_seq_len    = input_tensors->at("attention_mask").shape[2];
+    const bool   output_attentions  = output_tensors->isExist("attentions");
     allocateBuffer(request_batch_size, request_seq_len);
 
     T*         hidden_features     = output_tensors->getPtr<T>("hidden_features");
     const T*   from_tensor         = input_tensors->getPtr<T>("input_query");
     const T*   attention_mask      = input_tensors->getPtr<T>("attention_mask");
     const int* padding_offset      = input_tensors->getPtr<int>("padding_offset", nullptr);
-    const T*   pos_query_cache     = input_tensors->getPtr<T>("pos_query_cache");
-    const T*   pos_key_cache       = input_tensors->getPtr<T>("pos_key_cache");
 
     const int m = input_tensors->at("input_query").shape[0];  // total_valid_tokens
     int       k = d_model_;                                   // hidden size
     int       n = hidden_units_;                              // num_heads * head_size
-    int       s = position_buckets_;                          // relative attention span ("k" in original paper)
+    int       s = attention_span_;                            // relative attention span ("k" in original paper)
 
     // Compute Q,K,V [token_num, hidden_size] --> [token_num, num_heads*head_size]
-    const bool is_batched_QKV_ = cublas_wrapper_->isFuseBatchGemm(3, n, m, k);
-    if (is_batched_QKV_) {
-        const T* hA[]{attention_weights->query_weight.kernel,
-                        attention_weights->key_weight.kernel,
-                        attention_weights->value_weight.kernel,
-                        nullptr,
-                        from_tensor,
-                        from_tensor,
-                        from_tensor,
-                        nullptr,
-                        q_buf_,
-                        k_buf_,
-                        v_buf_,
-                        nullptr};
-        // Note: Here, we assume the weights of each time may be different.
-        // If we can preprocess these weights before inference, we can reduce the overhead
-        // caused by cudaMemcpyAsync
-        cudaMemcpyAsync((void*)batch_qkv_kernel_ptr_, hA, sizeof(T*) * 12, cudaMemcpyHostToDevice, stream_);
-        cublas_wrapper_->batchedGemm(CUBLAS_OP_N,
-                                        CUBLAS_OP_N,
-                                        n,
-                                        m,
-                                        k,
-                                        (const void* const*)batch_qkv_kernel_ptr_,
-                                        n,
-                                        (const void* const*)batch_qkv_input_ptr_,
-                                        k,
-                                        (void* const*)batch_qkv_buf_ptr_,
-                                        n,
-                                        3);
+#ifdef SPARSITY_ENABLED
+    int m_tmp = m;
+    if (m_tmp % 8 != 0) {
+        m_tmp = (m_tmp / 8 + 1) * 8;
+    }
+    const int m_padded = m_tmp;
+
+    if (sparse_ && cublas_wrapper_->isUseSparse(1, n, m, k)) {
+        cublas_wrapper_->SpGemm(
+            CUBLAS_OP_N, CUBLAS_OP_N, n, m_padded, k, attention_weights->query_weight.sp_kernel, from_tensor, q_buf_);
+        cublas_wrapper_->SpGemm(
+            CUBLAS_OP_N, CUBLAS_OP_N, n, m_padded, k, attention_weights->key_weight.sp_kernel, from_tensor, k_buf_);
+        cublas_wrapper_->SpGemm(
+            CUBLAS_OP_N, CUBLAS_OP_N, n, m_padded, k, attention_weights->value_weight.sp_kernel, from_tensor, v_buf_);
     }
     else {
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                CUBLAS_OP_N,
-                                n,
-                                m,
-                                k,
-                                attention_weights->query_weight.kernel,
-                                n,
-                                from_tensor,
-                                k,
-                                q_buf_,
-                                n);
+#endif
+        const bool is_batched_QKV_ = cublas_wrapper_->isFuseBatchGemm(3, n, m, k);
+        if (is_batched_QKV_) {
+            const T* hA[]{attention_weights->query_weight.kernel,
+                          attention_weights->key_weight.kernel,
+                          attention_weights->value_weight.kernel,
+                          nullptr,
+                          from_tensor,
+                          from_tensor,
+                          from_tensor,
+                          nullptr,
+                          q_buf_,
+                          k_buf_,
+                          v_buf_,
+                          nullptr};
+            // Note: Here, we assume the weights of each time may be different.
+            // If we can preprocess these weights before inference, we can reduce the overhead
+            // caused by cudaMemcpyAsync
+            cudaMemcpyAsync((void*)batch_qkv_kernel_ptr_, hA, sizeof(T*) * 12, cudaMemcpyHostToDevice, stream_);
+            cublas_wrapper_->batchedGemm(CUBLAS_OP_N,
+                                         CUBLAS_OP_N,
+                                         n,
+                                         m,
+                                         k,
+                                         (const void* const*)batch_qkv_kernel_ptr_,
+                                         n,
+                                         (const void* const*)batch_qkv_input_ptr_,
+                                         k,
+                                         (void* const*)batch_qkv_buf_ptr_,
+                                         n,
+                                         3);
+        }
+        else {
+            cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                                  CUBLAS_OP_N,
+                                  n,
+                                  m,
+                                  k,
+                                  attention_weights->query_weight.kernel,
+                                  n,
+                                  from_tensor,
+                                  k,
+                                  q_buf_,
+                                  n);
 
-        cublas_wrapper_->Gemm(
-            CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, attention_weights->key_weight.kernel, n, from_tensor, k, k_buf_, n);
+            cublas_wrapper_->Gemm(
+                CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, attention_weights->key_weight.kernel, n, from_tensor, k, k_buf_, n);
 
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                CUBLAS_OP_N,
-                                n,
-                                m,
-                                k,
-                                attention_weights->value_weight.kernel,
-                                n,
-                                from_tensor,
-                                k,
-                                v_buf_,
-                                n);
+            cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                                  CUBLAS_OP_N,
+                                  n,
+                                  m,
+                                  k,
+                                  attention_weights->value_weight.kernel,
+                                  n,
+                                  from_tensor,
+                                  k,
+                                  v_buf_,
+                                  n);
+        }
+#ifdef SPARSITY_ENABLED
     }
-    sync_check_cuda_error();
+#endif
 
     // add QKV bias (bias optional, can be nullptr) & permute
     // [batch, seq_len, num_heads*head_size] or [token_num, num_heads*head_size] --> [batch, num_heads, seq_len,
@@ -181,18 +199,19 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * request_seq_len,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-    sync_check_cuda_error();
+
     // above is content-to-content "c2c" attention, Qc*Kc^T
     // similarly, disentangled attention has two extra type of attentions (replacing the normal relative attention bias
     // w/ real attentions)
 
+    // Cached Qr, Kr [batch * num_heads, 2*attention_span, head_size]
     // compute content-to-position "c2p" attention,  Qc*Kr^T [batch, num_heads, seq_len, 2*attention_span]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
                                         CUBLAS_OP_N,
                                         2 * s,
                                         request_seq_len,
                                         size_per_head_,
-                                        pos_key_cache,
+                                        input_tensors->getPtr<T>("pos_key_cache"),
                                         size_per_head_,
                                         2 * s * size_per_head_,
                                         q_buf_2_,
@@ -203,7 +222,6 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * 2 * s,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-    sync_check_cuda_error();
 
     // compute position-to-content "p2c" attention,  Kc*Qr^T [batch, num_heads, seq_len, 2*attention_span]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
@@ -211,7 +229,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         2 * s,
                                         request_seq_len,
                                         size_per_head_,
-                                        pos_query_cache,
+                                        input_tensors->getPtr<T>("pos_query_cache"),
                                         size_per_head_,
                                         2 * s * size_per_head_,
                                         k_buf_2_,
@@ -222,21 +240,11 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_seq_len * 2 * s,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
-    sync_check_cuda_error();
 
-    print_to_screen(pos_key_cache, 3);
-    print_to_screen(pos_query_cache, 3);
-    print_to_screen(q_buf_2_, 3);
-    print_to_screen(k_buf_2_, 3);
-    std::cout << std::endl;
-    
     // gather & add c2c+c2p+p2c. In-place operation
     invokeDisentangledAttention(
         qk_buf_, qk_buf_, QcKr_buf_, KcQr_buf_, request_batch_size * head_num_, request_seq_len, s, stream_);
     sync_check_cuda_error();
-
-    print_to_screen(qk_buf_, 3);
-    std::cout << std::endl;
 
     // softmax(QK)
     MaskedSoftmaxParam<T, T> param;
@@ -250,6 +258,19 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
     param.qk_scale           = 1.0f;
     param.linear_bias_slopes = nullptr;
     invokeMaskedSoftmax(param, stream_);
+    sync_check_cuda_error();
+
+    // save attention results
+    // Note: "transpose" is not transpose, it's just writting attention results to certain layer, [B, M, S, S] --> [B,
+    // L, M, S, S]
+    if (output_attentions) {
+        invokeTransposeAttentions<T>(output_tensors->at("attentions"),
+                                     {MEMORY_GPU,
+                                      getTensorType<T>(),
+                                      {request_batch_size, head_num_, request_seq_len, request_seq_len},
+                                      qk_buf_},
+                                     stream_);
+    }
     sync_check_cuda_error();
 
     // compute softmax(QK) * V
@@ -268,7 +289,6 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         size_per_head_,
                                         request_seq_len * size_per_head_,
                                         request_batch_size * head_num_);
-    sync_check_cuda_error();
 
     // permute [batch_size, num_heads, seq_len, head_size] --> [batch_size, seq_len, num_heads, head_size] or
     // [token_num, num_heads, head_size] w/ padding removal
@@ -303,18 +323,33 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
     n = d_model_;
 
     // attention output Linear layer (bias and layernorm are handled outside)
-    cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                            CUBLAS_OP_N,
-                            n,
-                            m,
-                            k,
-                            attention_weights->attention_output_weight.kernel,
-                            n,
-                            qkv_buf_2_,
-                            k,
-                            hidden_features,
-                            n);
-    sync_check_cuda_error();
+#ifdef SPARSITY_ENABLED
+    if (sparse_ && cublas_wrapper_->isUseSparse(1, n, m, k)) {
+        cublas_wrapper_->SpGemm(CUBLAS_OP_N,
+                                CUBLAS_OP_N,
+                                n,
+                                m_padded,
+                                k,
+                                attention_weights->attention_output_weight.sp_kernel,
+                                qkv_buf_2_,
+                                hidden_features);
+    }
+    else {
+#endif
+        cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                              CUBLAS_OP_N,
+                              n,
+                              m,
+                              k,
+                              attention_weights->attention_output_weight.kernel,
+                              n,
+                              qkv_buf_2_,
+                              k,
+                              hidden_features,
+                              n);
+#ifdef SPARSITY_ENABLED
+    }
+#endif
 
     if (is_free_buffer_after_forward_ == true) {
         freeBuffer();
@@ -323,26 +358,74 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
 }
 
 template<typename T>
-ZppEncoderAttentionLayer<T>::ZppEncoderAttentionLayer(size_t           head_num,
-                                                    size_t           size_per_head,
-                                                    size_t           d_model,
-                                                    size_t           position_buckets,
-                                                    float            q_scaling,
-                                                    cudaStream_t     stream,
-                                                    cublasMMWrapper* cublas_wrapper,
-                                                    IAllocator*      allocator,
-                                                    bool             is_free_buffer_after_forward):
+ZcodeEncoderDisentangledAttentionLayer<T>::ZcodeEncoderDisentangledAttentionLayer(size_t           max_batch_size,
+                                                          size_t           max_seq_len,
+                                                          size_t           head_num,
+                                                          size_t           size_per_head,
+                                                          size_t           attention_span,
+                                                          float            q_scaling,
+                                                          cudaStream_t     stream,
+                                                          cublasMMWrapper* cublas_wrapper,
+                                                          IAllocator*      allocator,
+                                                          bool             is_free_buffer_after_forward,
+                                                          bool             sparse):
+    ZcodeEncoderDisentangledAttentionLayer(max_batch_size,
+                               max_seq_len,
+                               head_num,
+                               size_per_head,
+                               attention_span,
+                               head_num * size_per_head,
+                               q_scaling,
+                               stream,
+                               cublas_wrapper,
+                               allocator,
+                               is_free_buffer_after_forward,
+                               sparse)
+{
+}
+
+template<typename T>
+ZcodeEncoderDisentangledAttentionLayer<T>::ZcodeEncoderDisentangledAttentionLayer(size_t           max_batch_size,
+                                                          size_t           max_seq_len,
+                                                          size_t           head_num,
+                                                          size_t           size_per_head,
+                                                          size_t           attention_span,
+                                                          size_t           d_model,
+                                                          float            q_scaling,
+                                                          cudaStream_t     stream,
+                                                          cublasMMWrapper* cublas_wrapper,
+                                                          IAllocator*      allocator,
+                                                          bool             is_free_buffer_after_forward,
+                                                          bool             sparse):
     BaseAttentionLayer<T>(stream, cublas_wrapper, allocator, is_free_buffer_after_forward),
     head_num_(head_num),
     size_per_head_(size_per_head),
     hidden_units_(head_num_ * size_per_head_),
+    attention_span_(attention_span),
     d_model_(d_model),
-    position_buckets_(position_buckets),
+    sparse_(sparse),
     q_scaling_(q_scaling)
-{}
+{
+}
 
 template<typename T>
-ZppEncoderAttentionLayer<T>::~ZppEncoderAttentionLayer()
+ZcodeEncoderDisentangledAttentionLayer<T>::ZcodeEncoderDisentangledAttentionLayer(ZcodeEncoderDisentangledAttentionLayer<T> const& attention_layer):
+    BaseAttentionLayer<T>(attention_layer.stream_,
+                          attention_layer.cublas_wrapper_,
+                          attention_layer.allocator_,
+                          attention_layer.is_free_buffer_after_forward_),
+    head_num_(attention_layer.head_num_),
+    size_per_head_(attention_layer.size_per_head_),
+    hidden_units_(attention_layer.hidden_units_),
+    attention_span_(attention_layer.attention_span_),
+    d_model_(attention_layer.d_model_),
+    sparse_(attention_layer.sparse_),
+    q_scaling_(attention_layer.q_scaling_)
+{
+}
+
+template<typename T>
+ZcodeEncoderDisentangledAttentionLayer<T>::~ZcodeEncoderDisentangledAttentionLayer()
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     cublas_wrapper_ = nullptr;
@@ -350,13 +433,13 @@ ZppEncoderAttentionLayer<T>::~ZppEncoderAttentionLayer()
 }
 
 template<typename T>
-void ZppEncoderAttentionLayer<T>::allocateBuffer()
+void ZcodeEncoderDisentangledAttentionLayer<T>::allocateBuffer()
 {
     FT_CHECK(false);
 }
 
 template<typename T>
-void ZppEncoderAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_len)
+void ZcodeEncoderDisentangledAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_len)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     q_buf_   = (T*)allocator_->reMalloc(q_buf_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
@@ -366,9 +449,9 @@ void ZppEncoderAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
     k_buf_2_ = q_buf_2_ + batch_size * seq_len * hidden_units_;
     v_buf_2_ = k_buf_2_ + batch_size * seq_len * hidden_units_;
     qk_buf_  = (T*)allocator_->reMalloc(qk_buf_, sizeof(T) * batch_size * head_num_ * seq_len * seq_len, false);
-
-    QcKr_buf_    = (T*)allocator_->reMalloc(QcKr_buf_, sizeof(T) * 2 * batch_size * head_num_ * seq_len * 2 * position_buckets_, false);
-    KcQr_buf_  = QcKr_buf_ + batch_size * head_num_ * seq_len * 2 * position_buckets_;
+    QcKr_buf_    = (T*)allocator_->reMalloc(
+        QcKr_buf_, sizeof(T) * 2 * batch_size * head_num_ * seq_len * 2 * attention_span_, false);
+    KcQr_buf_  = QcKr_buf_ + batch_size * head_num_ * seq_len * 2 * attention_span_;
     qkv_buf_   = (T*)allocator_->reMalloc(qkv_buf_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
     batch_qkv_kernel_ptr_    = (T**)allocator_->reMalloc(batch_qkv_kernel_ptr_, sizeof(T*) * 12, false);
@@ -379,7 +462,7 @@ void ZppEncoderAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t seq_l
 }
 
 template<typename T>
-void ZppEncoderAttentionLayer<T>::freeBuffer()
+void ZcodeEncoderDisentangledAttentionLayer<T>::freeBuffer()
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     if (is_allocate_buffer_) {
@@ -397,6 +480,10 @@ void ZppEncoderAttentionLayer<T>::freeBuffer()
     }
 }
 
-template class ZppEncoderAttentionLayer<half>;
+template class ZcodeEncoderDisentangledAttentionLayer<float>;
+template class ZcodeEncoderDisentangledAttentionLayer<half>;
+#ifdef ENABLE_BF16
+template class ZcodeEncoderDisentangledAttentionLayer<__nv_bfloat16>;
+#endif
 
 }  // namespace fastertransformer

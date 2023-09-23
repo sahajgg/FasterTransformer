@@ -21,15 +21,16 @@
 namespace fastertransformer {
 
 template<typename T>
-class ZppEncoderAttentionLayer: public BaseAttentionLayer<T> {
+class ZcodeEncoderDisentangledAttentionLayer: public BaseAttentionLayer<T> {
 private:
     // metadata
-    size_t                    head_num_;
-    size_t                    size_per_head_;
-    size_t                    hidden_units_;
-    size_t                    d_model_;
-    size_t                    position_buckets_;
-    float                     q_scaling_;
+    size_t head_num_;
+    size_t size_per_head_;
+    size_t hidden_units_;
+    size_t attention_span_;
+    size_t d_model_;
+    bool   sparse_;
+    float  q_scaling_;
 
     void allocateBuffer() override;
     void freeBuffer() override;
@@ -57,19 +58,36 @@ protected:
     T** batch_qkv_kernel_ptr_    = nullptr;
     T** batch_qkv_input_ptr_     = nullptr;
     T** batch_qkv_buf_ptr_       = nullptr;
-    
+
 public:
-    ZppEncoderAttentionLayer(size_t           head_num,
+    ZcodeEncoderDisentangledAttentionLayer(size_t           max_batch_size,
+                               size_t           max_seq_len,
+                               size_t           head_num,
                                size_t           size_per_head,
-                               size_t           d_model,
-                               size_t           position_buckets,
+                               size_t           attention_span,
                                float            q_scaling,
                                cudaStream_t     stream,
                                cublasMMWrapper* cublas_wrapper,
                                IAllocator*      allocator,
-                               bool             is_free_buffer_after_forward);
+                               bool             is_free_buffer_after_forward,
+                               bool             sparse = false);
 
-    ~ZppEncoderAttentionLayer();
+    ZcodeEncoderDisentangledAttentionLayer(size_t           max_batch_size,
+                               size_t           max_seq_len,
+                               size_t           head_num,
+                               size_t           size_per_head,
+                               size_t           attention_span,
+                               size_t           d_model,
+                               float            q_scaling,
+                               cudaStream_t     stream,
+                               cublasMMWrapper* cublas_wrapper,
+                               IAllocator*      allocator,
+                               bool             is_free_buffer_after_forward,
+                               bool             sparse = false);
+
+    ZcodeEncoderDisentangledAttentionLayer(ZcodeEncoderDisentangledAttentionLayer<T> const& attention_layer);
+
+    ~ZcodeEncoderDisentangledAttentionLayer();
 
     void
     forward(TensorMap* output_tensors, TensorMap* input_tensors, const AttentionWeight<T>* attention_weights) override;

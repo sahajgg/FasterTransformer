@@ -32,7 +32,7 @@ add_subdirectory(t5)
 add_subdirectory(bart)
 add_subdirectory(bert)
 add_subdirectory(deberta)
-add_subdirectory(zcodepp)
+add_subdirectory(zcode_encoder)
 
 add_library(th_transformer SHARED
             $<TARGET_OBJECTS:th_bart>
@@ -50,7 +50,7 @@ add_library(th_transformer SHARED
             $<TARGET_OBJECTS:th_t5>
             $<TARGET_OBJECTS:th_utils>
             $<TARGET_OBJECTS:th_vit>
-            $<TARGET_OBJECTS:th_zcodepp>
+            $<TARGET_OBJECTS:th_zcode_encoder>
 )
 target_link_libraries(th_transformer PUBLIC "${TORCH_LIBRARIES}"
                       th_bart
@@ -68,7 +68,7 @@ target_link_libraries(th_transformer PUBLIC "${TORCH_LIBRARIES}"
                       th_t5
                       th_utils
                       th_vit
-                      th_zcodepp
+                      th_zcode_encoder
 )
 
 if(ENABLE_FP8)
