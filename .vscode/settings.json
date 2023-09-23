@@ -91,6 +91,8 @@
         "__memory": "cpp",
         "filesystem": "cpp",
         "queue": "cpp",
-        "stack": "cpp"
+        "stack": "cpp",
+        "shared_mutex": "cpp",
+        "valarray": "cpp"
     }
 }

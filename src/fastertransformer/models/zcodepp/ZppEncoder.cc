@@ -130,16 +130,22 @@ void ZppEncoder<T>::forward(std::vector<Tensor>*       output_tensors,
                          const ZppEncoderWeight<T>*    zppencoder_weights)
 {
     TensorMap input_tensors_map = TensorMap({{"input_ids", input_tensors->at(0)}, {"sequence_lengths", input_tensors->at(1)}});
+    TensorMap pos_query_cache_map, pos_key_cache_map;
     for (uint l = 0; l < num_layer_; l++) {
-        input_tensors_map.insert("pos_query_cache_" + std::to_string(l), pos_query_cache->at(l));
-        input_tensors_map.insert("pos_key_cache_" + std::to_string(l), pos_key_cache->at(l));
+        pos_query_cache_map.insert("pos_query_cache_" + std::to_string(l), pos_query_cache->at(l));
+        pos_key_cache_map.insert("pos_key_cache_" + std::to_string(l), pos_key_cache->at(l));
     }
     TensorMap output_tensors_map = TensorMap({{"output_hidden_state", output_tensors->at(0)}});
-    forward(&output_tensors_map, &input_tensors_map, zppencoder_weights);
+    forward(&output_tensors_map, &input_tensors_map, &pos_query_cache_map, &pos_key_cache_map, zppencoder_weights);
 }
 
 template<typename T>
-void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* zppencoder_weights)
+void ZppEncoder<T>::forward(
+    TensorMap* output_tensors, 
+    TensorMap* input_tensors, 
+    TensorMap* pos_query_cache,
+    TensorMap* pos_key_cache,
+    const ZppEncoderWeight<T>* zppencoder_weights)
 {
     // input_tensors:
     //      input_ids [batch, seqlen]
@@ -217,6 +223,7 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
                             (float*)nullptr,
                             0,
                             stream_);
+    // print_to_screen(deberta_in_buffer_, request_batch_size * request_seq_len * hidden_units_);
     sync_check_cuda_error();
 
     deberta_input_ptr       = deberta_in_buffer_;
@@ -245,12 +252,12 @@ void ZppEncoder<T>::forward(TensorMap* output_tensors, TensorMap* input_tensors,
                     Tensor{MEMORY_GPU,
                         data_type,
                         std::vector<size_t>{request_batch_size, head_num_, 2 * position_buckets_, size_per_head_},
-                        input_tensors->at("pos_query_cache_" + std::to_string(l)).getPtr<T>()}},
+                        pos_query_cache->at("pos_query_cache_" + std::to_string(l)).getPtr<T>()}},
                 {"pos_key_cache",
                     Tensor{MEMORY_GPU,
                         data_type,
                         std::vector<size_t>{request_batch_size, head_num_, 2 * position_buckets_, size_per_head_},
-                        input_tensors->at("pos_key_cache_" + std::to_string(l)).getPtr<T>()}}
+                        pos_key_cache->at("pos_key_cache_" + std::to_string(l)).getPtr<T>()}}
             };
             
             attn_input_tensors.insertIfValid("padding_offset", *padding_offset_tensor_ptr);

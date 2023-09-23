@@ -32,6 +32,8 @@ struct ZppEncoderLayerWeight {
     ZppEncoderLayerWeight() = default;
     ZppEncoderLayerWeight(const size_t hidden_units, const size_t inter_size);
     ~ZppEncoderLayerWeight();
+    ZppEncoderLayerWeight(const ZppEncoderLayerWeight& other);
+    ZppEncoderLayerWeight& operator=(const ZppEncoderLayerWeight& other);
 
     AttentionWeight<T> attention_weights;
     LayerNormWeight<T> attn_layernorm_weights;

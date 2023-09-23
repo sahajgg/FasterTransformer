@@ -96,6 +96,33 @@ ZppEncoderLayerWeight<T>::~ZppEncoderLayerWeight()
 }
 
 template<typename T>
+ZppEncoderLayerWeight<T>::ZppEncoderLayerWeight(const ZppEncoderLayerWeight& other):
+    ZppEncoderLayerWeight(other.hidden_units_, other.inter_size_)
+{
+    FT_LOG_DEBUG(__PRETTY_FUNCTION__);
+    for (auto it = other.weights_ptr_.begin(); it != other.weights_ptr_.end(); ++it) {
+        cudaD2Dcpy(weights_ptr_.at(it->first).ptr_, it->second.ptr_, it->second.size_);
+    }
+}
+
+template<typename T>
+ZppEncoderLayerWeight<T>& ZppEncoderLayerWeight<T>::operator=(const ZppEncoderLayerWeight& other)
+{
+    FT_LOG_DEBUG(__PRETTY_FUNCTION__);
+    hidden_units_     = other.hidden_units_;
+    inter_size_       = other.inter_size_;
+
+    for (auto it = other.weights_ptr_.begin(); it != other.weights_ptr_.end(); ++it) {
+        weights_ptr_.insert({it->first, it->second});
+        weights_ptr_.at(it->first).ptr_ = nullptr;
+        deviceMalloc(&weights_ptr_.at(it->first).ptr_, it->second.size_);
+        cudaD2Dcpy(weights_ptr_.at(it->first).ptr_, it->second.ptr_, it->second.size_);
+    }
+    setWeightPtr();
+    return *this;
+}
+
+template<typename T>
 void ZppEncoderLayerWeight<T>::loadModel(std::string dir_path, FtCudaDataType model_file_type)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);

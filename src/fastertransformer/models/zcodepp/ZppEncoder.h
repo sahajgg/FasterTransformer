@@ -82,7 +82,12 @@ public:
                  const std::vector<Tensor>*    pos_query_cache,
                  const std::vector<Tensor>*    pos_key_cache,
                  const ZppEncoderWeight<T>*    zppencoder_weights);
-    void forward(TensorMap* output_tensors, TensorMap* input_tensors, const ZppEncoderWeight<T>* zppencoder_weights);
+    void forward(
+        TensorMap* output_tensors, 
+        TensorMap* input_tensors, 
+        TensorMap* pos_query_cache,
+        TensorMap* pos_key_cache,
+        const ZppEncoderWeight<T>* zppencoder_weights);
 };
 
 }  // namespace fastertransformer

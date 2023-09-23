@@ -25,8 +25,8 @@ namespace torch_ext {
 class IFZppEncoderModel {
 public:
     virtual ~IFZppEncoderModel() {}
-    virtual void forward(long unsigned int batch_size,
-                        long unsigned int seq_len,
+    virtual void forward(size_t batch_size,
+                        size_t seq_len,
                         th::Tensor& input,
                         th::Tensor& sequence_lengths,
                         std::vector<th::Tensor>& pos_query_cache,
@@ -58,7 +58,13 @@ public:
         const int hidden_dim       = _head_num * _head_size;
         ft::check_cuda_error(cublasLtCreate(&_cublasltHandle));
 
-        cublas_algo_map_            = new ft::cublasAlgoMap("gemm_config.in", "");
+        static std::string cublas_config_path = "gemm_config.in";
+        static char* generated_config_path = std::getenv("FT_ZCODEPP_GEMM_CONFIG_PATH");
+        if (generated_config_path != nullptr) {
+            cublas_config_path = std::string(generated_config_path);
+        }
+
+        cublas_algo_map_            = new ft::cublasAlgoMap(cublas_config_path, "");
         cublas_wrapper_mutex_       = new std::mutex();
 
         // Layer-level weights
@@ -86,13 +92,11 @@ public:
             zppencoder_weights.zpp_encoder_layer_weights[i].attn_layernorm_weights.beta =
                 get_ptr<T>(_weights[9]) + hidden_dim * i;
             zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.kernel =
-                get_ptr<T>(_weights[10])
-                + hidden_dim * _inter_size * i;
+                get_ptr<T>(_weights[10]) + hidden_dim * _inter_size * i;
             zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.bias =
                 get_ptr<T>(_weights[11]) + _inter_size * i;
             zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.kernel =
-                get_ptr<T>(_weights[12])
-                + _inter_size * hidden_dim * i;
+                get_ptr<T>(_weights[12]) + _inter_size * hidden_dim * i;
             zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.bias =
                 get_ptr<T>(_weights[13]) + hidden_dim * i;
             zppencoder_weights.zpp_encoder_layer_weights[i].ffn_layernorm_weights.gamma =
@@ -114,8 +118,8 @@ public:
         delete cublas_wrapper_mutex_;
     }
 
-    void forward(long unsigned int batch_size,
-                 long unsigned int seq_len,
+    void forward(size_t batch_size,
+                 size_t seq_len,
                  th::Tensor& input,
                  th::Tensor& sequence_lengths,
                  std::vector<th::Tensor>& pos_query_cache,
@@ -145,30 +149,38 @@ public:
                                                             true);
 
         ft::DataType            data_type     = ft::getTensorType<T>();
-        std::vector<ft::Tensor> input_tensors = std::vector<ft::Tensor>{
-            ft::Tensor{ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{batch_size, seq_len}, get_ptr<int>(input)},
-            ft::Tensor{ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{batch_size}, get_ptr<int>(sequence_lengths)}};
 
-        std::vector<ft::Tensor> ft_pos_query_cache = std::vector<ft::Tensor>{};
-        std::vector<ft::Tensor> ft_pos_key_cache   = std::vector<ft::Tensor>{};
-        for(uint l=0; l < _layer_num; l++)
-        {
-            ft_pos_query_cache.push_back(ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, _head_num, 2 * _position_buckets, _head_size}, get_ptr<T>(pos_query_cache[l])});
-            ft_pos_key_cache.push_back(ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, _head_num, 2 * _position_buckets, _head_size}, get_ptr<T>(pos_key_cache[l])});
+        ft::TensorMap input_tensors_map = ft::TensorMap(
+            {
+                {"input_ids", ft::Tensor{ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{batch_size, seq_len}, get_ptr<int>(input)}}, 
+                {"sequence_lengths", ft::Tensor{ft::MEMORY_GPU, ft::TYPE_INT32, std::vector<size_t>{batch_size}, get_ptr<int>(sequence_lengths)}}
+            }
+        );
+
+        ft::TensorMap pos_query_cache_map, pos_key_cache_map;
+        for (uint l = 0; l < _layer_num; l++) {
+            pos_query_cache_map.insert(
+                "pos_query_cache_" + std::to_string(l), 
+                ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, _head_num, 2 * _position_buckets, _head_size}, get_ptr<T>(pos_query_cache[l])}
+            );
+            pos_key_cache_map.insert(
+                "pos_key_cache_" + std::to_string(l), 
+                ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, _head_num, 2 * _position_buckets, _head_size}, get_ptr<T>(pos_key_cache[l])}
+            );
         }
 
-        std::vector<ft::Tensor> output_tensors = std::vector<ft::Tensor>{
-            ft::Tensor{ft::MEMORY_GPU,
-                       data_type,
-                       std::vector<size_t>{batch_size, seq_len, (size_t)(_head_num * _head_size)},
-                       get_ptr<T>(output)}};
+        ft::TensorMap output_tensors_map = ft::TensorMap(
+            {
+                {"output_hidden_state", ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, seq_len, (size_t)(_head_num * _head_size)}, get_ptr<T>(output)}}
+            }
+        );
 
         try {
             zppencoder->forward(
-                &output_tensors, 
-                &input_tensors,
-                &ft_pos_query_cache,
-                &ft_pos_key_cache,
+                &output_tensors_map, 
+                &input_tensors_map,
+                &pos_query_cache_map,
+                &pos_key_cache_map,
                 &zppencoder_weights);
         }
         catch (std::runtime_error& error) {

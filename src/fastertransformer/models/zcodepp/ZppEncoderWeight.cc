@@ -65,6 +65,50 @@ ZppEncoderWeight<T>::~ZppEncoderWeight()
 }
 
 template<typename T>
+ZppEncoderWeight<T>::ZppEncoderWeight(const ZppEncoderWeight& other):
+    ZppEncoderWeight(other.hidden_units_,
+                  other.inter_size_,
+                  other.vocab_size_,
+                  other.num_layer_)
+{
+    FT_LOG_DEBUG(__PRETTY_FUNCTION__);
+    zpp_encoder_layer_weights.clear();
+    zpp_encoder_layer_weights.reserve(num_layer_);
+    for (int i = 0; i < num_layer_; i++) {
+        zpp_encoder_layer_weights.push_back(other.zpp_encoder_layer_weights[i]);
+    }
+    for (int i = 0; i < weights_num_; i++) {
+        deviceMalloc(&weights_ptr[i], weights_size[i]);
+        cudaD2Dcpy(weights_ptr[i], other.weights_ptr[i], weights_size[i]);
+    }
+
+    setWeightPtr();
+}
+
+template<typename T>
+ZppEncoderWeight<T>& ZppEncoderWeight<T>::operator=(const ZppEncoderWeight& other)
+{
+    FT_LOG_DEBUG(__PRETTY_FUNCTION__);
+    hidden_units_              = other.hidden_units_;
+    inter_size_                = other.inter_size_;
+    vocab_size_                = other.vocab_size_;
+    num_layer_                 = other.num_layer_;
+
+    zpp_encoder_layer_weights.clear();
+    zpp_encoder_layer_weights.reserve(num_layer_);
+    for (int i = 0; i < num_layer_; i++) {
+        zpp_encoder_layer_weights.push_back(other.zpp_encoder_layer_weights[i]);
+    }
+    for (int i = 0; i < weights_num_; i++) {
+        deviceMalloc(&weights_ptr[i], weights_size[i]);
+        cudaD2Dcpy(weights_ptr[i], other.weights_ptr[i], weights_size[i]);
+    }
+
+    setWeightPtr();
+    return *this;
+}
+
+template<typename T>
 void ZppEncoderWeight<T>::loadModel(std::string dir_path)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);

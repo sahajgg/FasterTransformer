@@ -120,8 +120,8 @@ th::Tensor FasterTransformerZppEncoderModel::forward(
     CHECK_TH_CUDA(sequence_lengths);
     CHECK_CONTIGUOUS(sequence_lengths);
     TORCH_CHECK(sequence_lengths.dtype() == torch::kInt32, "sequence_lengths dtype should be int32");
-    long unsigned int batch_size = input.size(0);
-    long unsigned int seq_len    = input.size(1);
+    size_t batch_size = input.size(0);
+    size_t seq_len    = input.size(1);
 
     auto output =
         torch::empty({batch_size, seq_len, (head_info[0] * head_info[1]).item<int>()},
