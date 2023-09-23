@@ -93,6 +93,7 @@
         "queue": "cpp",
         "stack": "cpp",
         "shared_mutex": "cpp",
-        "valarray": "cpp"
+        "valarray": "cpp",
+        "locale": "cpp"
     }
 }

@@ -53,36 +53,65 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
     int       s = position_buckets_;                          // relative attention span ("k" in original paper)
 
     // Compute Q,K,V [token_num, hidden_size] --> [token_num, num_heads*head_size]
-    const T* hA[]{attention_weights->query_weight.kernel,
-                  attention_weights->key_weight.kernel,
-                  attention_weights->value_weight.kernel,
-                  nullptr,
-                  from_tensor,
-                  from_tensor,
-                  from_tensor,
-                  nullptr,
-                  q_buf_,
-                  k_buf_,
-                  v_buf_,
-                  nullptr};
-    sync_check_cuda_error();
+    const bool is_batched_QKV_ = cublas_wrapper_->isFuseBatchGemm(3, n, m, k);
+    if (is_batched_QKV_) {
+        const T* hA[]{attention_weights->query_weight.kernel,
+                        attention_weights->key_weight.kernel,
+                        attention_weights->value_weight.kernel,
+                        nullptr,
+                        from_tensor,
+                        from_tensor,
+                        from_tensor,
+                        nullptr,
+                        q_buf_,
+                        k_buf_,
+                        v_buf_,
+                        nullptr};
+        // Note: Here, we assume the weights of each time may be different.
+        // If we can preprocess these weights before inference, we can reduce the overhead
+        // caused by cudaMemcpyAsync
+        cudaMemcpyAsync((void*)batch_qkv_kernel_ptr_, hA, sizeof(T*) * 12, cudaMemcpyHostToDevice, stream_);
+        cublas_wrapper_->batchedGemm(CUBLAS_OP_N,
+                                        CUBLAS_OP_N,
+                                        n,
+                                        m,
+                                        k,
+                                        (const void* const*)batch_qkv_kernel_ptr_,
+                                        n,
+                                        (const void* const*)batch_qkv_input_ptr_,
+                                        k,
+                                        (void* const*)batch_qkv_buf_ptr_,
+                                        n,
+                                        3);
+    }
+    else {
+        cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                                CUBLAS_OP_N,
+                                n,
+                                m,
+                                k,
+                                attention_weights->query_weight.kernel,
+                                n,
+                                from_tensor,
+                                k,
+                                q_buf_,
+                                n);
 
-    // Note: Here, we assume the weights of each time may be different.
-    // If we can preprocess these weights before inference, we can reduce the overhead
-    // caused by cudaMemcpyAsync
-    cudaMemcpyAsync((void*)batch_qkv_kernel_ptr_, hA, sizeof(T*) * 12, cudaMemcpyHostToDevice, stream_);
-    cublas_wrapper_->batchedGemm(CUBLAS_OP_N,
-                                    CUBLAS_OP_N,
-                                    n,
-                                    m,
-                                    k,
-                                    (const void* const*)batch_qkv_kernel_ptr_,
-                                    n,
-                                    (const void* const*)batch_qkv_input_ptr_,
-                                    k,
-                                    (void* const*)batch_qkv_buf_ptr_,
-                                    n,
-                                    3);
+        cublas_wrapper_->Gemm(
+            CUBLAS_OP_N, CUBLAS_OP_N, n, m, k, attention_weights->key_weight.kernel, n, from_tensor, k, k_buf_, n);
+
+        cublas_wrapper_->Gemm(CUBLAS_OP_N,
+                                CUBLAS_OP_N,
+                                n,
+                                m,
+                                k,
+                                attention_weights->value_weight.kernel,
+                                n,
+                                from_tensor,
+                                k,
+                                v_buf_,
+                                n);
+    }
     sync_check_cuda_error();
 
     // add QKV bias (bias optional, can be nullptr) & permute
@@ -133,7 +162,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
         sync_check_cuda_error();
     }
 
-    float scalar = 1 / (sqrtf(size_per_head_ * 1.0f) * q_scaling_);
+    float scalar = 1 / sqrtf(size_per_head_ * q_scaling_);
 
     // compute Q*K [batch, num_heads, q_seq_len, k_seq_len]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
@@ -194,11 +223,20 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
     sync_check_cuda_error();
+
+    print_to_screen(pos_key_cache, 3);
+    print_to_screen(pos_query_cache, 3);
+    print_to_screen(q_buf_2_, 3);
+    print_to_screen(k_buf_2_, 3);
+    std::cout << std::endl;
     
     // gather & add c2c+c2p+p2c. In-place operation
     invokeDisentangledAttention(
         qk_buf_, qk_buf_, QcKr_buf_, KcQr_buf_, request_batch_size * head_num_, request_seq_len, s, stream_);
     sync_check_cuda_error();
+
+    print_to_screen(qk_buf_, 3);
+    std::cout << std::endl;
 
     // softmax(QK)
     MaskedSoftmaxParam<T, T> param;
@@ -230,6 +268,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                                         size_per_head_,
                                         request_seq_len * size_per_head_,
                                         request_batch_size * head_num_);
+    sync_check_cuda_error();
 
     // permute [batch_size, num_heads, seq_len, head_size] --> [batch_size, seq_len, num_heads, head_size] or
     // [token_num, num_heads, head_size] w/ padding removal
@@ -275,6 +314,7 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
                             k,
                             hidden_features,
                             n);
+    sync_check_cuda_error();
 
     if (is_free_buffer_after_forward_ == true) {
         freeBuffer();
@@ -283,17 +323,15 @@ void ZppEncoderAttentionLayer<T>::forward(TensorMap*                output_tenso
 }
 
 template<typename T>
-ZppEncoderAttentionLayer<T>::ZppEncoderAttentionLayer(size_t           max_batch_size,
-                                                          size_t           max_seq_len,
-                                                          size_t           head_num,
-                                                          size_t           size_per_head,
-                                                          size_t           d_model,
-                                                          size_t           position_buckets,
-                                                          float            q_scaling,
-                                                          cudaStream_t     stream,
-                                                          cublasMMWrapper* cublas_wrapper,
-                                                          IAllocator*      allocator,
-                                                          bool             is_free_buffer_after_forward):
+ZppEncoderAttentionLayer<T>::ZppEncoderAttentionLayer(size_t           head_num,
+                                                    size_t           size_per_head,
+                                                    size_t           d_model,
+                                                    size_t           position_buckets,
+                                                    float            q_scaling,
+                                                    cudaStream_t     stream,
+                                                    cublasMMWrapper* cublas_wrapper,
+                                                    IAllocator*      allocator,
+                                                    bool             is_free_buffer_after_forward):
     BaseAttentionLayer<T>(stream, cublas_wrapper, allocator, is_free_buffer_after_forward),
     head_num_(head_num),
     size_per_head_(size_per_head),

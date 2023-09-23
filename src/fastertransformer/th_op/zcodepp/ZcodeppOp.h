@@ -67,48 +67,32 @@ public:
         cublas_algo_map_            = new ft::cublasAlgoMap(cublas_config_path, "");
         cublas_wrapper_mutex_       = new std::mutex();
 
+        // Model-level weights
+        zppencoder_weights.word_embedding_table                       = get_ptr<T>(_weights[0]);
+        zppencoder_weights.word_embedding_layernorm_weights.gamma     = get_ptr<T>(_weights[1]);
+        zppencoder_weights.word_embedding_layernorm_weights.beta      = get_ptr<T>(_weights[2]);
+
         // Layer-level weights
         zppencoder_weights.zpp_encoder_layer_weights.clear();
         zppencoder_weights.zpp_encoder_layer_weights.resize(_layer_num);
         for (int i = 0; i < _layer_num; i++) {
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.query_weight.kernel =
-                get_ptr<T>(_weights[0]) + hidden_dim * hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.query_weight.bias =
-                get_ptr<T>(_weights[1]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.key_weight.kernel =
-                get_ptr<T>(_weights[2]) + hidden_dim * hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.key_weight.bias =
-                get_ptr<T>(_weights[3]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.value_weight.kernel =
-                get_ptr<T>(_weights[4]) + hidden_dim * hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.value_weight.bias =
-                get_ptr<T>(_weights[5]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.attention_output_weight.kernel =
-                get_ptr<T>(_weights[6]) + hidden_dim * hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.attention_output_weight.bias =
-                get_ptr<T>(_weights[7]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attn_layernorm_weights.gamma =
-                get_ptr<T>(_weights[8]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].attn_layernorm_weights.beta =
-                get_ptr<T>(_weights[9]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.kernel =
-                get_ptr<T>(_weights[10]) + hidden_dim * _inter_size * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.bias =
-                get_ptr<T>(_weights[11]) + _inter_size * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.kernel =
-                get_ptr<T>(_weights[12]) + _inter_size * hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.bias =
-                get_ptr<T>(_weights[13]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_layernorm_weights.gamma =
-                get_ptr<T>(_weights[14]) + hidden_dim * i;
-            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_layernorm_weights.beta =
-                get_ptr<T>(_weights[15]) + hidden_dim * i;
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.query_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 0]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.query_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 1]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.key_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 2]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.key_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 3]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.value_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 4]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.value_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 5]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.attention_output_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 6]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attention_weights.attention_output_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 7]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attn_layernorm_weights.gamma = get_ptr<T>(_weights[3 + (_layer_num * i) + 8]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].attn_layernorm_weights.beta = get_ptr<T>(_weights[3 + (_layer_num * i) + 9]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 10]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.intermediate_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 11]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.kernel = get_ptr<T>(_weights[3 + (_layer_num * i) + 12]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_weights.output_weight.bias = get_ptr<T>(_weights[3 + (_layer_num * i) + 13]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_layernorm_weights.gamma = get_ptr<T>(_weights[3 + (_layer_num * i) + 14]);
+            zppencoder_weights.zpp_encoder_layer_weights[i].ffn_layernorm_weights.beta = get_ptr<T>(_weights[3 + (_layer_num * i) + 15]);
         }
-
-        // Model-level weights
-        zppencoder_weights.word_embedding_table                       = get_ptr<T>(_weights[16]);
-        zppencoder_weights.word_embedding_layernorm_weights.gamma     = get_ptr<T>(_weights[17]);
-        zppencoder_weights.word_embedding_layernorm_weights.beta      = get_ptr<T>(_weights[18]);
     }
 
     ~FTZppEncoderModel() override
@@ -212,25 +196,7 @@ private:
 
 class FasterTransformerZppEncoderModel: public th::jit::CustomClassHolder {
 public:
-    FasterTransformerZppEncoderModel(th::Tensor q_kernel,
-                             th::Tensor q_bias,
-                             th::Tensor k_kernel,
-                             th::Tensor k_bias,
-                             th::Tensor v_kernel,
-                             th::Tensor v_bias,
-                             th::Tensor attr_output_kernel,
-                             th::Tensor attr_output_bias,
-                             th::Tensor attr_output_layernorm_gamma,
-                             th::Tensor attr_output_layernorm_beta,
-                             th::Tensor inter_kernel,
-                             th::Tensor inter_bias,
-                             th::Tensor output_kernel,
-                             th::Tensor output_bias,
-                             th::Tensor output_layernorm_gamma,
-                             th::Tensor output_layernorm_beta,
-                             th::Tensor word_embedding_table,
-                             th::Tensor word_embedding_layernorm_gamma,
-                             th::Tensor word_embedding_layernorm_beta,
+    FasterTransformerZppEncoderModel(std::vector<th::Tensor> model_weights,
                              int64_t    head_num,
                              int64_t    head_size,
                              int64_t    inter_size,

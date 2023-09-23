@@ -22,9 +22,7 @@ namespace fastertransformer {
 template<typename T>
 void ZppEncoder<T>::initialize()
 {
-    disentangled_attention_layer_ = new ZppEncoderAttentionLayer<T>(0,
-                                                                    0,
-                                                                    head_num_,
+    disentangled_attention_layer_ = new ZppEncoderAttentionLayer<T>(head_num_,
                                                                     size_per_head_,
                                                                     head_num_ * size_per_head_,
                                                                     position_buckets_,
@@ -161,6 +159,7 @@ void ZppEncoder<T>::forward(
     
     const int* input_ids        = input_tensors->at("input_ids").getPtr<int>();
     const int* sequence_lengths = input_tensors->at("sequence_lengths").getPtr<int>();
+    T*         model_output     = output_tensors->at("output_hidden_state").getPtr<T>();
 
     DataType     data_type                 = getTensorType<T>();
     Tensor*      padding_offset_tensor_ptr = nullptr;
@@ -206,7 +205,7 @@ void ZppEncoder<T>::forward(
                         deberta_emb_buf_, 
                         padding_offset_, 
                         h_token_num, 
-                        head_num_ * size_per_head_, 
+                        hidden_units_, 
                         stream_);
     sync_check_cuda_error();
 
@@ -223,7 +222,6 @@ void ZppEncoder<T>::forward(
                             (float*)nullptr,
                             0,
                             stream_);
-    // print_to_screen(deberta_in_buffer_, request_batch_size * request_seq_len * hidden_units_);
     sync_check_cuda_error();
 
     deberta_input_ptr       = deberta_in_buffer_;
@@ -238,36 +236,19 @@ void ZppEncoder<T>::forward(
         // Attention
         {
             TensorMap attn_input_tensors{
-                {"input_query",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{h_token_num, hidden_units_},
-                        from_tensor}},
-                {"attention_mask",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{request_batch_size, 1, request_seq_len, request_seq_len},
-                        attention_mask_}},
-                {"pos_query_cache",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{request_batch_size, head_num_, 2 * position_buckets_, size_per_head_},
-                        pos_query_cache->at("pos_query_cache_" + std::to_string(l)).getPtr<T>()}},
-                {"pos_key_cache",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{request_batch_size, head_num_, 2 * position_buckets_, size_per_head_},
-                        pos_key_cache->at("pos_key_cache_" + std::to_string(l)).getPtr<T>()}}
+                {"input_query", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, from_tensor}},
+                {"attention_mask", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, 1, request_seq_len, request_seq_len}, attention_mask_}},
+                {"pos_query_cache", pos_query_cache->at("pos_query_cache_" + std::to_string(l))},
+                {"pos_key_cache", pos_key_cache->at("pos_key_cache_" + std::to_string(l))}
             };
             
             attn_input_tensors.insertIfValid("padding_offset", *padding_offset_tensor_ptr);
 
             TensorMap attn_output_tensors{
-                {"hidden_features",
-                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, attn_out_buf_}}};
+                {"hidden_features", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, attn_out_buf_}}
+            };
 
-            disentangled_attention_layer_->forward(
-                &attn_output_tensors, &attn_input_tensors, &layer_weight.attention_weights);
+            disentangled_attention_layer_->forward(&attn_output_tensors, &attn_input_tensors, &layer_weight.attention_weights);
         }
 
         invokeAddBiasResidualLayerNorm(attn_out_buf_,
@@ -284,18 +265,10 @@ void ZppEncoder<T>::forward(
         // FFN (Intermediate + Output)
         {
             TensorMap ffn_input_tensors(
-                {{"ffn_input",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{h_token_num, hidden_units_},
-                        attn_out_buf_}}}
+                {{"ffn_input", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, attn_out_buf_}}}
             );
             TensorMap ffn_output_tensors(
-                {{"ffn_output",
-                    Tensor{MEMORY_GPU, 
-                        data_type, 
-                        std::vector<size_t>{h_token_num, hidden_units_}, 
-                        out_tensor}}}
+                {{"ffn_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{h_token_num, hidden_units_}, out_tensor}}}
             );
             ffn_layer_->forward(&ffn_output_tensors, &ffn_input_tensors, &layer_weight.ffn_weights);
         }
@@ -313,12 +286,12 @@ void ZppEncoder<T>::forward(
     }  // transformer layers
 
     // post process (rebuild padding)
-    invokeRebuildPadding(output_tensors->at("output_hidden_state").getPtr<T>(),
-                            deberta_out_buffer_,
-                            padding_offset_,
-                            h_token_num,
-                            head_num_ * size_per_head_,
-                            stream_);
+    invokeRebuildPadding(model_output,
+                        deberta_output_ptr,
+                        padding_offset_,
+                        h_token_num,
+                        hidden_units_,
+                        stream_);
     sync_check_cuda_error();
 
     if (padding_offset_tensor_ptr != nullptr) {

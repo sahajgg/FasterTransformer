@@ -19,25 +19,7 @@
 namespace th = torch;
 namespace torch_ext {
 
-FasterTransformerZppEncoderModel::FasterTransformerZppEncoderModel(th::Tensor q_kernel,
-                                                   th::Tensor q_bias,
-                                                   th::Tensor k_kernel,
-                                                   th::Tensor k_bias,
-                                                   th::Tensor v_kernel,
-                                                   th::Tensor v_bias,
-                                                   th::Tensor attr_output_kernel,
-                                                   th::Tensor attr_output_bias,
-                                                   th::Tensor attr_output_layernorm_gamma,
-                                                   th::Tensor attr_output_layernorm_beta,
-                                                   th::Tensor inter_kernel,
-                                                   th::Tensor inter_bias,
-                                                   th::Tensor output_kernel,
-                                                   th::Tensor output_bias,
-                                                   th::Tensor output_layernorm_gamma,
-                                                   th::Tensor output_layernorm_beta,
-                                                   th::Tensor word_embedding_table,
-                                                   th::Tensor word_embedding_layernorm_gamma,
-                                                   th::Tensor word_embedding_layernorm_beta,
+FasterTransformerZppEncoderModel::FasterTransformerZppEncoderModel(std::vector<th::Tensor> model_weights,
                                                    int64_t    head_num,
                                                    int64_t    head_size,
                                                    int64_t    inter_size,
@@ -45,45 +27,27 @@ FasterTransformerZppEncoderModel::FasterTransformerZppEncoderModel(th::Tensor q_
                                                    int64_t    position_buckets,
                                                    double     q_scaling):
     _st(at::ScalarType::Half),
-    weights{q_kernel,
-            q_bias,
-            k_kernel,
-            k_bias,
-            v_kernel,
-            v_bias,
-            attr_output_kernel,
-            attr_output_bias,
-            attr_output_layernorm_gamma,
-            attr_output_layernorm_beta,
-            inter_kernel,
-            inter_bias,
-            output_kernel,
-            output_bias,
-            output_layernorm_gamma,
-            output_layernorm_beta,
-            word_embedding_table,
-            word_embedding_layernorm_gamma,
-            word_embedding_layernorm_beta}
+    weights(model_weights)
 {
-    CHECK_INPUT(q_kernel, _st);                            // hidden_dim, hidden_dim
-    CHECK_INPUT(q_bias, _st);                              // hidden_dim
-    CHECK_INPUT(k_kernel, _st);                            // hidden_dim, hidden_dim
-    CHECK_INPUT(k_bias, _st);                              // hidden_dim
-    CHECK_INPUT(v_kernel, _st);                            // hidden_dim, hidden_dim
-    CHECK_INPUT(v_bias, _st);                              // hidden_dim
-    CHECK_INPUT(attr_output_kernel, _st);                  // hidden_dim, hidden_dim
-    CHECK_INPUT(attr_output_bias, _st);                    // hidden_dim
-    CHECK_INPUT(attr_output_layernorm_gamma, _st);         // hidden_dim
-    CHECK_INPUT(attr_output_layernorm_beta, _st);          // hidden_dim
-    CHECK_INPUT(inter_kernel, _st);                        // 4 * hidden_dim, hidden_dim
-    CHECK_INPUT(inter_bias, _st);                          // 4 * hidden_dim
-    CHECK_INPUT(output_kernel, _st);                       // hidden_dim, 4 * hidden_dim
-    CHECK_INPUT(output_bias, _st);                         // hidden_dim
-    CHECK_INPUT(output_layernorm_gamma, _st);              // hidden_dim
-    CHECK_INPUT(output_layernorm_beta, _st);               // hidden_dim
-    CHECK_INPUT(word_embedding_table, _st);                // vocab_size, hidden_dim
-    CHECK_INPUT(word_embedding_layernorm_gamma, _st);      // hidden_dim
-    CHECK_INPUT(word_embedding_layernorm_beta, _st);       // hidden_dim
+    CHECK_INPUT(model_weights.at(3), _st);                            // hidden_dim, hidden_dim
+    CHECK_INPUT(model_weights.at(4), _st);                              // hidden_dim
+    CHECK_INPUT(model_weights.at(5), _st);                            // hidden_dim, hidden_dim
+    CHECK_INPUT(model_weights.at(6), _st);                              // hidden_dim
+    CHECK_INPUT(model_weights.at(7), _st);                            // hidden_dim, hidden_dim
+    CHECK_INPUT(model_weights.at(8), _st);                              // hidden_dim
+    CHECK_INPUT(model_weights.at(9), _st);                  // hidden_dim, hidden_dim
+    CHECK_INPUT(model_weights.at(10), _st);                    // hidden_dim
+    CHECK_INPUT(model_weights.at(11), _st);         // hidden_dim
+    CHECK_INPUT(model_weights.at(12), _st);          // hidden_dim
+    CHECK_INPUT(model_weights.at(13), _st);                        // 4 * hidden_dim, hidden_dim
+    CHECK_INPUT(model_weights.at(14), _st);                          // 4 * hidden_dim
+    CHECK_INPUT(model_weights.at(15), _st);                       // hidden_dim, 4 * hidden_dim
+    CHECK_INPUT(model_weights.at(16), _st);                         // hidden_dim
+    CHECK_INPUT(model_weights.at(17), _st);              // hidden_dim
+    CHECK_INPUT(model_weights.at(18), _st);               // hidden_dim
+    CHECK_INPUT(model_weights.at(0), _st);                // vocab_size, hidden_dim
+    CHECK_INPUT(model_weights.at(1), _st);      // hidden_dim
+    CHECK_INPUT(model_weights.at(2), _st);       // hidden_dim
 
     ftzppencoder = new FTZppEncoderModel<half>(head_num,
                                         head_size,
@@ -141,8 +105,8 @@ th::Tensor FasterTransformerZppEncoderModel::forward(
 std::vector<th::Tensor> FasterTransformerZppEncoderModel::get_pickle_info() const
 {
     std::vector<th::Tensor> tmp(weights);
-    tmp.push_back(head_info);
-    tmp.push_back(scaling_info);
+    tmp.insert(tmp.begin(), scaling_info);
+    tmp.insert(tmp.begin(), head_info);
     return tmp;
 }
 
@@ -150,25 +114,7 @@ std::vector<th::Tensor> FasterTransformerZppEncoderModel::get_pickle_info() cons
 
 static auto fasterTransformerZppEncoderModelTHS =
 torch::jit::class_<torch_ext::FasterTransformerZppEncoderModel>("FasterTransformer", "ZcodeppEncoder")
-        .def(torch::jit::init<th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
-                              th::Tensor,
+        .def(torch::jit::init<std::vector<th::Tensor>,
                               int64_t,
                               int64_t,
                               int64_t,
@@ -181,31 +127,14 @@ torch::jit::class_<torch_ext::FasterTransformerZppEncoderModel>("FasterTransform
                 return self->get_pickle_info();
             },
             [](std::vector<th::Tensor> state) -> c10::intrusive_ptr<torch_ext::FasterTransformerZppEncoderModel> {
-                int64_t head_num                  = state[19][0].item().to<int>();
-                int64_t head_size                 = state[19][1].item().to<int>();
-                int64_t layer_num                 = state[19][2].item().to<int>();
-                int64_t inter_size                = state[19][3].item().to<int>();
-                int64_t position_buckets          = state[19][4].item().to<int>();
-                double  q_scaling                 = state[20][0].item().to<double>();
-                return c10::make_intrusive<torch_ext::FasterTransformerZppEncoderModel>(state[0],
-                                                                                state[1],
-                                                                                state[2],
-                                                                                state[3],
-                                                                                state[4],
-                                                                                state[5],
-                                                                                state[6],
-                                                                                state[7],
-                                                                                state[8],
-                                                                                state[9],
-                                                                                state[10],
-                                                                                state[11],
-                                                                                state[12],
-                                                                                state[13],
-                                                                                state[14],
-                                                                                state[15],
-                                                                                state[16],
-                                                                                state[17],
-                                                                                state[18],
+                int64_t head_num                  = state[0][0].item().to<int>();
+                int64_t head_size                 = state[0][1].item().to<int>();
+                int64_t layer_num                 = state[0][2].item().to<int>();
+                int64_t inter_size                = state[0][3].item().to<int>();
+                int64_t position_buckets          = state[0][4].item().to<int>();
+                double  q_scaling                 = state[1][0].item().to<double>();
+                std::vector<th::Tensor> model_weights(state.begin() + 2, state.end());
+                return c10::make_intrusive<torch_ext::FasterTransformerZppEncoderModel>(model_weights,
                                                                                 head_num,
                                                                                 head_size,
                                                                                 inter_size,
