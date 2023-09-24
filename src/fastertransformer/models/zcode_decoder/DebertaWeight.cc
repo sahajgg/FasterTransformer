@@ -19,7 +19,7 @@
 namespace fastertransformer {
 
 template<typename T>
-ZcodeEncoderWeight<T>::ZcodeEncoderWeight(const size_t hidden_units,
+ZcodeDecoderWeight<T>::ZcodeDecoderWeight(const size_t hidden_units,
                                 const size_t inter_size,
                                 const size_t max_relative_positions,
                                 const size_t relative_position_buckets,
@@ -56,13 +56,13 @@ ZcodeEncoderWeight<T>::ZcodeEncoderWeight(const size_t hidden_units,
     deberta_layer_weights.reserve(num_layer_);
     for (int i = 0; i < num_layer_; i++) {
         deberta_layer_weights.push_back(
-            ZcodeEncoderLayerWeight<T>(hidden_units_, inter_size_, tensor_para_size_, tensor_para_rank_));
+            ZcodeDecoderLayerWeight<T>(hidden_units_, inter_size_, tensor_para_size_, tensor_para_rank_));
     }
     FT_LOG_DEBUG("%s stop", __PRETTY_FUNCTION__);
 }
 
 template<typename T>
-ZcodeEncoderWeight<T>::~ZcodeEncoderWeight()
+ZcodeDecoderWeight<T>::~ZcodeDecoderWeight()
 {
     if (is_maintain_buffer == true) {
         deberta_layer_weights.clear();
@@ -79,8 +79,8 @@ ZcodeEncoderWeight<T>::~ZcodeEncoderWeight()
 }
 
 template<typename T>
-ZcodeEncoderWeight<T>::ZcodeEncoderWeight(const ZcodeEncoderWeight& other):
-    ZcodeEncoderWeight(other.hidden_units_,
+ZcodeDecoderWeight<T>::ZcodeDecoderWeight(const ZcodeDecoderWeight& other):
+    ZcodeDecoderWeight(other.hidden_units_,
                   other.inter_size_,
                   other.max_relative_positions_,
                   other.relative_position_buckets_,
@@ -107,7 +107,7 @@ ZcodeEncoderWeight<T>::ZcodeEncoderWeight(const ZcodeEncoderWeight& other):
 }
 
 template<typename T>
-ZcodeEncoderWeight<T>& ZcodeEncoderWeight<T>::operator=(const ZcodeEncoderWeight& other)
+ZcodeDecoderWeight<T>& ZcodeDecoderWeight<T>::operator=(const ZcodeDecoderWeight& other)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     hidden_units_              = other.hidden_units_;
@@ -138,7 +138,7 @@ ZcodeEncoderWeight<T>& ZcodeEncoderWeight<T>::operator=(const ZcodeEncoderWeight
 }
 
 template<typename T>
-void ZcodeEncoderWeight<T>::loadModel(std::string dir_path)
+void ZcodeDecoderWeight<T>::loadModel(std::string dir_path)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     FtCudaDataType model_file_type =
@@ -158,16 +158,16 @@ void ZcodeEncoderWeight<T>::loadModel(std::string dir_path)
         weights_ptr[2], {(size_t)weights_size[2]}, dir_path + "/model.embeddings.LayerNorm.bias.bin", model_file_type);
     loadWeightFromBin<T>(weights_ptr[3],
                          {(size_t)weights_size[3]},
-                         dir_path + "/model.encoder.rel_embeddings.weight.bin",
+                         dir_path + "/model.decoder.rel_embeddings.weight.bin",
                          model_file_type);
     loadWeightFromBin<T>(
-        weights_ptr[4], {(size_t)weights_size[4]}, dir_path + "/model.encoder.LayerNorm.weight.bin", model_file_type);
+        weights_ptr[4], {(size_t)weights_size[4]}, dir_path + "/model.decoder.LayerNorm.weight.bin", model_file_type);
     loadWeightFromBin<T>(
-        weights_ptr[5], {(size_t)weights_size[5]}, dir_path + "/model.encoder.LayerNorm.bias.bin", model_file_type);
+        weights_ptr[5], {(size_t)weights_size[5]}, dir_path + "/model.decoder.LayerNorm.bias.bin", model_file_type);
 
     for (uint l = 0; l < num_layer_; l++) {
         if (isValidLayerParallelId(l)) {
-            deberta_layer_weights[l].loadModel(dir_path + "model.encoder.layer." + std::to_string(l) + ".",
+            deberta_layer_weights[l].loadModel(dir_path + "model.decoder.layer." + std::to_string(l) + ".",
                                                model_file_type);
         }
     }
@@ -175,7 +175,7 @@ void ZcodeEncoderWeight<T>::loadModel(std::string dir_path)
 }
 
 template<typename T>
-bool ZcodeEncoderWeight<T>::isValidLayerParallelId(int l)
+bool ZcodeDecoderWeight<T>::isValidLayerParallelId(int l)
 {
     int local_num_layer = (int)(ceil(num_layer_ * 1.0f / pipeline_para_size_));
     return l < num_layer_ && (l >= local_num_layer * pipeline_para_rank_)
@@ -183,7 +183,7 @@ bool ZcodeEncoderWeight<T>::isValidLayerParallelId(int l)
 }
 
 template<typename T>
-void ZcodeEncoderWeight<T>::setWeightPtr()
+void ZcodeDecoderWeight<T>::setWeightPtr()
 {
     word_embedding_table                   = weights_ptr[0];
     word_embedding_layernorm_weights.gamma = weights_ptr[1];
@@ -192,10 +192,10 @@ void ZcodeEncoderWeight<T>::setWeightPtr()
     is_maintain_buffer = true;
 }
 
-template struct ZcodeEncoderWeight<float>;
-template struct ZcodeEncoderWeight<half>;
+template struct ZcodeDecoderWeight<float>;
+template struct ZcodeDecoderWeight<half>;
 #ifdef ENABLE_BF16
-template struct ZcodeEncoderWeight<__nv_bfloat16>;
+template struct ZcodeDecoderWeight<__nv_bfloat16>;
 #endif
 
 }  // namespace fastertransformer

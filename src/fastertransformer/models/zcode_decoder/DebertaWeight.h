@@ -16,15 +16,15 @@
 
 #pragma once
 
-#include "src/fastertransformer/models/zcode_encoder/DebertaLayerWeight.h"
+#include "src/fastertransformer/models/zcode_decoder/DebertaLayerWeight.h"
 
 namespace fastertransformer {
 
 template<typename T>
-struct ZcodeEncoderWeight {
+struct ZcodeDecoderWeight {
 
-    ZcodeEncoderWeight() = default;
-    ZcodeEncoderWeight(const size_t hidden_units,
+    ZcodeDecoderWeight() = default;
+    ZcodeDecoderWeight(const size_t hidden_units,
                   const size_t inter_size,
                   const size_t max_relative_positions,
                   const size_t relative_position_buckets,
@@ -34,13 +34,13 @@ struct ZcodeEncoderWeight {
                   const size_t tensor_para_rank,
                   const size_t pipeline_para_size,
                   const size_t pipeline_para_rank);
-    ZcodeEncoderWeight(const int    hidden_units,
+    ZcodeDecoderWeight(const int    hidden_units,
                   const int    inter_size,
                   const size_t max_relative_positions,
                   const size_t relative_position_buckets,
                   const size_t vocab_size,
                   const int    num_layer):
-        ZcodeEncoderWeight(hidden_units,
+        ZcodeDecoderWeight(hidden_units,
                       inter_size,
                       max_relative_positions,
                       relative_position_buckets,
@@ -52,10 +52,10 @@ struct ZcodeEncoderWeight {
                       0)
     {
     }
-    ~ZcodeEncoderWeight();
-    ZcodeEncoderWeight(const ZcodeEncoderWeight& other);
-    ZcodeEncoderWeight&                     operator=(const ZcodeEncoderWeight& other);
-    std::vector<ZcodeEncoderLayerWeight<T>> deberta_layer_weights;
+    ~ZcodeDecoderWeight();
+    ZcodeDecoderWeight(const ZcodeDecoderWeight& other);
+    ZcodeDecoderWeight&                     operator=(const ZcodeDecoderWeight& other);
+    std::vector<ZcodeDecoderLayerWeight<T>> deberta_layer_weights;
     const T*                           word_embedding_table = nullptr;
     LayerNormWeight<T>                 word_embedding_layernorm_weights;
 
