@@ -25,7 +25,7 @@
 #include "src/fastertransformer/layers/TensorParallelReluFfnLayer.h"
 #include "src/fastertransformer/layers/attention_layers/TensorParallelZcodeEncoderDisentangledAttentionLayer.h"
 #include "src/fastertransformer/layers/attention_layers/TensorParallelDecoderCrossAttentionLayer.h"
-#include "src/fastertransformer/models/zcode_decoder/DebertaWeight.h"
+#include "src/fastertransformer/models/zcode_decoder/DebertaLayerWeight.h"
 #include "src/fastertransformer/utils/nccl_utils.h"
 
 namespace fastertransformer {
@@ -56,8 +56,8 @@ private:
     std::shared_ptr<AbstractCustomComm> custom_all_reduce_comm_;
     bool                                enable_custom_all_reduce_;
 
-    void allocateBuffer();
-    void freeBuffer();
+    void allocateBuffer() override;
+    void freeBuffer() override;
     void initialize();
 
     const ActivationType activation_type_;
@@ -71,21 +71,17 @@ private:
 
 protected:
     // model params
-    size_t* h_pinned_token_num_ptr_ = nullptr;
-    int*    padding_offset_         = nullptr;
     T*      attention_mask_         = nullptr;
-    T*      deberta_emb_buf_        = nullptr;
-    T*      deberta_rel_emb_buf_    = nullptr;
     T*      deberta_in_buffer_      = nullptr;
     T*      attn_out_buf_           = nullptr;
-    T*      cross_attn_out_buf_           = nullptr;
-    T*      deberta_out_buffer_     = nullptr;
+    T*      cross_attn_out_buf_     = nullptr;
+    T*      decoder_layer_output_   = nullptr;
 
     T* normed_from_tensor_  = nullptr;
     T* normed_attn_out_buf_ = nullptr;
 
 public:
-    ZcodeDecoder(size_t                              max_batch_size,
+    ZcodeDecoder(size_t                             max_batch_size,
             size_t                              max_seq_len,
             size_t                              head_num,
             size_t                              size_per_head,
@@ -131,13 +127,13 @@ public:
                  const std::vector<Tensor>* input_tensors,
                  const TensorMap*           pos_query_cache,
                  const TensorMap*           pos_key_cache,
-                 const ZcodeDecoderWeight<T>*    deberta_weights);
+                 const std::vector<ZcodeDecoderLayerWeight<T>*>*    deberta_layer_weights);
     void forward(
         TensorMap* output_tensors, 
         TensorMap* input_tensors, 
         const TensorMap* pos_query_cache,
         const TensorMap* pos_key_cache,
-        const ZcodeDecoderWeight<T>* deberta_weights
+        const std::vector<ZcodeDecoderLayerWeight<T>*>* deberta_layer_weights
     );
 };
 

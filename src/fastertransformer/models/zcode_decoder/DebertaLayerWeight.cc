@@ -134,18 +134,6 @@ ZcodeDecoderLayerWeight<T>::~ZcodeDecoderLayerWeight()
         ffn_layernorm_weights.beta                       = nullptr;
         is_maintain_buffer_                              = false;
     }
-    if (is_maintain_sp_buffer_ == true) {
-        for (int i = 0; i < 6; i++) {
-            deviceFree(sp_weights_ptr_[i]);
-        }
-        attention_weights.query_weight.sp_kernel            = nullptr;
-        attention_weights.key_weight.sp_kernel              = nullptr;
-        attention_weights.value_weight.sp_kernel            = nullptr;
-        attention_weights.attention_output_weight.sp_kernel = nullptr;
-        ffn_weights.intermediate_weight.sp_kernel           = nullptr;
-        ffn_weights.output_weight.sp_kernel                 = nullptr;
-        is_maintain_sp_buffer_                              = false;
-    }
 }
 
 template<typename T>
@@ -179,34 +167,6 @@ ZcodeDecoderLayerWeight<T>& ZcodeDecoderLayerWeight<T>::operator=(const ZcodeDec
 
     return *this;
 }
-
-#ifdef SPARSITY_ENABLED
-template<typename T>
-void ZcodeDecoderLayerWeight<T>::compress_weights(cublasMMWrapper& cublas_wrapper, int hidden_dim)
-{
-    int inter_size = hidden_dim * 4;
-    deviceMalloc(&sp_weights_ptr_[0], hidden_dim * hidden_dim);
-    deviceMalloc(&sp_weights_ptr_[1], hidden_dim * hidden_dim);
-    deviceMalloc(&sp_weights_ptr_[2], hidden_dim * hidden_dim);
-    deviceMalloc(&sp_weights_ptr_[3], hidden_dim * hidden_dim);
-    deviceMalloc(&sp_weights_ptr_[4], hidden_dim * inter_size);
-    deviceMalloc(&sp_weights_ptr_[5], inter_size * hidden_dim);
-    cublas_wrapper.compressMatrix(attention_weights.query_weight.kernel, sp_weights_ptr_[0], hidden_dim, hidden_dim);
-    cublas_wrapper.compressMatrix(attention_weights.key_weight.kernel, sp_weights_ptr_[1], hidden_dim, hidden_dim);
-    cublas_wrapper.compressMatrix(attention_weights.value_weight.kernel, sp_weights_ptr_[2], hidden_dim, hidden_dim);
-    cublas_wrapper.compressMatrix(
-        attention_weights.attention_output_weight.kernel, sp_weights_ptr_[3], hidden_dim, hidden_dim);
-    cublas_wrapper.compressMatrix(ffn_weights.intermediate_weight.kernel, sp_weights_ptr_[4], inter_size, hidden_dim);
-    cublas_wrapper.compressMatrix(ffn_weights.output_weight.kernel, sp_weights_ptr_[5], hidden_dim, inter_size);
-    attention_weights.query_weight.sp_kernel            = sp_weights_ptr_[0];
-    attention_weights.key_weight.sp_kernel              = sp_weights_ptr_[1];
-    attention_weights.value_weight.sp_kernel            = sp_weights_ptr_[2];
-    attention_weights.attention_output_weight.sp_kernel = sp_weights_ptr_[3];
-    ffn_weights.intermediate_weight.sp_kernel           = sp_weights_ptr_[4];
-    ffn_weights.output_weight.sp_kernel                 = sp_weights_ptr_[5];
-    is_maintain_sp_buffer_                              = true;
-}
-#endif
 
 template<typename T>
 void ZcodeDecoderLayerWeight<T>::loadModel(std::string dir_path, FtCudaDataType model_file_type)

@@ -65,8 +65,6 @@ private:
     size_t                                       tensor_para_rank_;
     bool                                         is_maintain_buffer_ = false;
     std::unordered_map<std::string, FtWeight<T>> weights_ptr_;
-    T*                                           sp_weights_ptr_[6];
-    bool                                         is_maintain_sp_buffer_ = false;
 };
 
 }  // namespace fastertransformer
