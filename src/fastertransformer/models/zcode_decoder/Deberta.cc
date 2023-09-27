@@ -23,7 +23,7 @@ template<typename T>
 void ZcodeDecoder<T>::initialize()
 {
     disentangled_attention_layer_ =
-        new TensorParallelZcodeEncoderDisentangledAttentionLayer<T>(0,
+        new TensorParallelZcodeDecoderDisentangledAttentionLayer<T>(0,
                                                         0,
                                                         head_num_ / tensor_para_.world_size_,
                                                         size_per_head_,
@@ -39,7 +39,7 @@ void ZcodeDecoder<T>::initialize()
                                                         custom_all_reduce_comm_,
                                                         enable_custom_all_reduce_);
 
-    cross_attention_layer_ = new TensorParallelDecoderCrossAttentionLayer<T>(0,
+    cross_attention_layer_ = new TensorParallelZcodeDecoderCrossAttentionLayer<T>(0,
                                                         head_num_ / tensor_para_.world_size_,
                                                         size_per_head_,
                                                         head_num_ * size_per_head_,
@@ -303,14 +303,15 @@ void ZcodeDecoder<T>::forward(std::vector<Tensor>*         output_tensors,
                          const std::vector<ZcodeDecoderLayerWeight<T>*>* deberta_layer_weights)
 {
     TensorMap input_tensors_map = TensorMap({
-            {"input_ids", input_tensors->at(0)},
-            {"sequence_lengths", input_tensors->at(1)},
+            {"decoder_input", input_tensors->at(0)},
+            {"current_cache_seq_len", input_tensors->at(1)},
             {"encoder_output", input_tensors->at(2)},
             {"encoder_sequence_length", input_tensors->at(3)},
             {"finished", input_tensors->at(4)},
             {"step", input_tensors->at(5)},
             {"ite", input_tensors->at(6)},
-            {"cache_indirection", input_tensors->at(7)}
+            {"cache_indirection", input_tensors->at(7)},
+            {"attention_mask", input_tensors->at(8)}
     });
     TensorMap output_tensors_map = TensorMap({
             {"decoder_output", output_tensors->at(0)},
@@ -332,8 +333,8 @@ void ZcodeDecoder<T>::forward(
 )
 {
     // input tensors:
-    //      decoder_input [request_batch_size, d_model_],
-    //      sequence_lengths [request_batch_size]
+    //      decoder_input [request_batch_size, request_seq_len, d_model_],
+    //      current_cache_seq_len [1]
     //      encoder_output [request_batch_size, mem_max_seq_len, mem_d_model_],
     //      encoder_sequence_length [request_batch_size],
     //      finished [request_batch_size],
@@ -341,27 +342,28 @@ void ZcodeDecoder<T>::forward(
     //      ite [1] on cpu
     //      cache_indirection [request_batch_size / beam_width, beam_width, max_seq_len]
     //      (NOTE: Here, request_batch_size contains the beam_width, so request_batch_size / beam_width)
+    //      attention_mask [request_batch_size, 1, max_seq_len, max_seq_len]
 
     // output tensors:
     //      decoder_output [request_batch_size, d_model_],
-    //      key_cache [num_layer / pipeline_para_.world_size_, batch, head_num, size_per_head // x, max_seq_len, x]
-    //      value_cache [num_layer / pipeline_para_.world_size_, batch, head_num, max_seq_len, size_per_head]
-    //      key_mem_cache [num_layer / pipeline_para_.world_size_, batch_size, mem_max_seq_len, hidden_dimension],
-    //      value_mem_cache [num_layer / pipeline_para_.world_size_, batch_size, mem_max_seq_len, hidden_dimension]
+    //      key_cache [num_layer / pipeline_para_.world_size_, request_batch_size, head_num, max_seq_len, size_per_head]
+    //      value_cache [num_layer / pipeline_para_.world_size_, request_batch_size, head_num, max_seq_len, size_per_head]
+    //      key_mem_cache [num_layer / pipeline_para_.world_size_, request_batch_size, mem_max_seq_len, hidden_dimension],
+    //      value_mem_cache [num_layer / pipeline_para_.world_size_, request_batch_size, mem_max_seq_len, hidden_dimension]
 
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
-    FT_CHECK(input_tensors->size() == 8);
+    FT_CHECK(input_tensors->size() == 8 || input_tensors->size() == 9);
     FT_CHECK(output_tensors->size() == 5);
-    const size_t request_batch_size = input_tensors->at("input_ids").shape[0];
-    const size_t request_seq_len    = input_tensors->at("input_ids").shape[1];
+    const size_t request_batch_size = input_tensors->at("decoder_input").shape[0];
+    const size_t request_seq_len    = input_tensors->at("decoder_input").shape[1];
     const size_t mem_max_seq_len    = input_tensors->at("encoder_output").shape[1];
+    
     FT_CHECK(input_tensors->at("input_ids").shape.size() == 2);
-    FT_CHECK(input_tensors->at("sequence_lengths").shape.size() == 1);
-    FT_CHECK(request_batch_size == input_tensors->at("sequence_lengths").shape[0]);
     allocateBuffer(request_batch_size, request_seq_len);
 
     const size_t   mem_max_seq_len = input_tensors->at("encoder_output").shape[1];
     const uint     ite             = input_tensors->at("ite").getVal<uint>();
+    const int      step            = input_tensors->at("step").getVal<int>();
     DataType       data_type       = getTensorType<T>();
 
     std::vector<size_t> self_k_cache_shape;
@@ -376,15 +378,6 @@ void ZcodeDecoder<T>::forward(
     }
 
     const std::vector<size_t> mem_cache_shape = {request_batch_size, output_tensors->at("key_mem_cache").shape[2], output_tensors->at("key_mem_cache").shape[3]};
-    
-    // build attention mask from seq len
-    invokeBuildEncoderAttentionMask(
-        attention_mask_,
-        input_tensors->at("sequence_lengths").getPtrWithOffset<int>(ite * request_batch_size),
-        request_batch_size,
-        request_seq_len,
-        stream_);
-    sync_check_cuda_error();
 
     // Encoder layers
     for (uint l = 0; l < num_layer_; l++) {
@@ -438,7 +431,7 @@ void ZcodeDecoder<T>::forward(
                                     layer_weight.attn_layernorm_weights.gamma,
                                     layer_weight.attn_layernorm_weights.beta,
                                     layernorm_eps_,
-                                    request_batch_size,
+                                    request_batch_size * request_seq_len,
                                     hidden_units_,
                                     (float*)nullptr,
                                     0,
@@ -446,30 +439,21 @@ void ZcodeDecoder<T>::forward(
             sync_check_cuda_error();
         }
 
-        // TODO: Update Attention layer
         // Attention
         {
             TensorMap attn_input_tensors{
-                {"input_query",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{request_batch_size, hidden_units_},
+                {"input_query", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, request_seq_len, hidden_units_},
                         layernorm_type_ == LayerNormType::pre_layernorm ? normed_from_tensor_ : decoder_input}},
-                {"attention_mask",
-                    Tensor{MEMORY_GPU,
-                        data_type,
-                        std::vector<size_t>{request_batch_size, 1, request_seq_len, request_seq_len},
-                        attention_mask_}},
                 {"pos_query_cache", pos_query_cache->at("pos_query_cache_" + std::to_string(l))},
                 {"pos_key_cache", pos_key_cache->at("pos_key_cache_" + std::to_string(l))},
-                {"finished", input_tensors->at("finished")},
-                {"step", input_tensors->at("step")},
+                {"current_cache_seq_len", input_tensors->at("finished")},
+                {"attention_mask", input_tensors->at("attention_mask")}
             };
             attn_input_tensors.insertIfValid("cache_indirection", input_tensors->at("cache_indirection"));
 
             TensorMap attn_output_tensors{
                 {"hidden_features",
-                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, hidden_units_}, attn_out_buf_}},
+                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, request_seq_len, hidden_units_}, attn_out_buf_}},
                 {"key_cache",
                     Tensor{MEMORY_GPU, data_type, self_k_cache_shape, output_tensors->at("key_cache").getPtrWithOffset(cache_offset)}},
                 {"value_cache",
@@ -487,7 +471,7 @@ void ZcodeDecoder<T>::forward(
                                             layer_weight.attn_layernorm_weights.gamma,
                                             layer_weight.attn_layernorm_weights.beta,
                                             layernorm_eps_,
-                                            request_batch_size,
+                                            request_batch_size * request_seq_len,
                                             hidden_units_,
                                             stream_);
         }
@@ -500,7 +484,7 @@ void ZcodeDecoder<T>::forward(
                                                         layer_weight.ffn_layernorm_weights.beta,
                                                         layer_weight.attention_weights.attention_output_weight.bias,
                                                         layernorm_eps_,
-                                                        request_batch_size,
+                                                        request_batch_size * request_seq_len,
                                                         hidden_units_,
                                                         (float*)nullptr,
                                                         (float*)nullptr,
@@ -514,7 +498,7 @@ void ZcodeDecoder<T>::forward(
         // Cross Attention
         {
             TensorMap cross_attention_input_tensors{
-                {"input_query", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, hidden_units_}, 
+                {"input_query", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, request_seq_len, hidden_units_}, 
                 layernorm_type_ == LayerNormType::pre_layernorm ? normed_attn_out_buf_ : attn_out_buf_}},
                 {"encoder_output", input_tensors->at("encoder_output")},
                 {"encoder_sequence_length", input_tensors->at("encoder_sequence_length")},
@@ -522,7 +506,7 @@ void ZcodeDecoder<T>::forward(
                 {"step", input_tensors->at("step")}};
 
             TensorMap cross_attention_output_tensors{
-                {"hidden_features", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, hidden_units_}, cross_attn_out_buf_}},
+                {"hidden_features", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, request_seq_len, hidden_units_}, cross_attn_out_buf_}},
                 {"key_cache",
                 Tensor{MEMORY_GPU, data_type, mem_cache_shape, output_tensors->at("key_mem_cache").getPtrWithOffset(mem_cache_offset)}},
                 {"value_cache",
@@ -537,7 +521,7 @@ void ZcodeDecoder<T>::forward(
                                         layer_weight.cross_attn_layernorm_weights.gamma,
                                         layer_weight.cross_attn_layernorm_weights.beta,
                                         layernorm_eps_,
-                                        request_batch_size,
+                                        request_batch_size * request_seq_len,
                                         hidden_units_,
                                         stream_);
 
@@ -547,10 +531,10 @@ void ZcodeDecoder<T>::forward(
                 {{"ffn_input",
                     Tensor{MEMORY_GPU,
                             data_type,
-                            std::vector<size_t>{request_batch_size, hidden_units_}, cross_attn_out_buf_}}});
+                            std::vector<size_t>{request_batch_size * request_seq_len, hidden_units_}, cross_attn_out_buf_}}});
             TensorMap ffn_output_tensors(
                 {{"ffn_output",
-                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size, hidden_units_}, decoder_output}}});
+                    Tensor{MEMORY_GPU, data_type, std::vector<size_t>{request_batch_size * request_seq_len, hidden_units_}, decoder_output}}});
             ffn_layer_->forward(&ffn_output_tensors, &ffn_input_tensors, &layer_weight.ffn_weights);
         }
 
@@ -561,7 +545,7 @@ void ZcodeDecoder<T>::forward(
                                             layer_weight.ffn_layernorm_weights.gamma,
                                             layer_weight.ffn_layernorm_weights.beta,
                                             layernorm_eps_,
-                                            request_batch_size,
+                                            request_batch_size * request_seq_len,
                                             hidden_units_,
                                             stream_);
         }
@@ -569,7 +553,7 @@ void ZcodeDecoder<T>::forward(
             invokeAddBiasResidual(decoder_output,
                                     cross_attn_out_buf_,
                                     layer_weight.ffn_weights.output_weight.bias,
-                                    request_batch_size,
+                                    request_batch_size * request_seq_len,
                                     hidden_units_,
                                     stream_);
         }
@@ -577,8 +561,8 @@ void ZcodeDecoder<T>::forward(
 
         if (isLastLayerParallelId(l) && pipeline_para_.rank_ != pipeline_para_.world_size_ - 1 && pipeline_para_.world_size_ > 1) {
 
-            ftNcclSend(decoder_output + request_batch_size * hidden_units_ / tensor_para_.world_size_ * tensor_para_.rank_,
-                        request_batch_size * hidden_units_ / tensor_para_.world_size_,
+            ftNcclSend(decoder_output + request_batch_size * request_seq_len * hidden_units_ / tensor_para_.world_size_ * tensor_para_.rank_,
+                        request_batch_size * request_seq_len * hidden_units_ / tensor_para_.world_size_,
                         pipeline_para_.rank_ + 1,
                         pipeline_para_,
                         stream_);

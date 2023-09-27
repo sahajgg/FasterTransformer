@@ -14,11 +14,9 @@
 
 cmake_minimum_required(VERSION 3.8)
 
-add_library(Decoding STATIC Decoding.cc)
-set_property(TARGET Decoding PROPERTY POSITION_INDEPENDENT_CODE  ON)
-set_property(TARGET Decoding PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
-target_link_libraries(Decoding PUBLIC -lcublas -lcudart -lcurand Decoder decoding_kernels
-                        BeamSearchLayer DynamicDecodeLayer tensor cuda_utils logger)
-
-add_executable(decoding_gemm decoding_gemm.cc)
-target_link_libraries(decoding_gemm PUBLIC -lcublas -lcublasLt -lcudart decoding_gemm_func memory_utils cuda_utils logger)
+add_library(DebertaDecoding STATIC DebertaDecoding.cc DebertaDecodingWeight.cc)
+set_property(TARGET DebertaDecoding PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET DebertaDecoding PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+target_link_libraries(DebertaDecoding PUBLIC -lcudart cublasMMWrapper ZcodeDecoder bert_preprocess_kernels
+                                        decoding_kernels DynamicDecodeLayer BaseBeamSearchLayer 
+                                        beam_search_topk_kernels gpt_kernels tensor cuda_utils logger)

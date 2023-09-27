@@ -38,6 +38,29 @@ void invokeAddQKVBiasIA3Transpose(T*           q_buf,
                                   const T*     ia3_value_weights,
                                   cudaStream_t stream);
 
+template<typename T>
+void invokeAddQBiasTranspose(T*           q_buf,
+                            T*           Q,
+                            const T*     bias_Q,
+                            const int    batch_size,
+                            const int    seq_len,
+                            const int    head_num,
+                            const int    size_per_head,
+                            cudaStream_t stream);
+
+template<typename T>
+void invokeAddKVBiasTranspose(T*           k_buf,
+                            T*           v_buf,
+                            T*           K,
+                            const T*     bias_K,
+                            T*           V,
+                            const T*     bias_V,
+                            const int    batch_size,
+                            const int    seq_len,
+                            const int    head_num,
+                            const int    size_per_head,
+                            cudaStream_t stream);
+
 template<typename T, typename T_IN>
 struct MaskedSoftmaxParam {
     // Common parameters.

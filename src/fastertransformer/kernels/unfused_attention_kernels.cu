@@ -81,6 +81,64 @@ __global__ void addQKVBiasIA3Transpose(T* q_out,
 }
 
 template<typename T>
+__global__ void addQBiasTranspose(T* q_out,
+                                const T* __restrict q_in,
+                                const T* __restrict bias_q,
+                                const int  batch_size,
+                                const int  seq_len,
+                                const int  head_num,
+                                const int  size_per_head)
+{
+    const int n        = head_num * size_per_head;
+    const int batch_id = blockIdx.x;
+    const int word_id  = blockIdx.y;
+    const int row_id   = batch_id * seq_len + word_id;
+
+    for (int col_id = threadIdx.x; col_id < n; col_id += blockDim.x) {
+        const int head_id   = col_id / size_per_head;
+        const int size_id   = col_id % size_per_head;
+        const int target_id = batch_id * (head_num * seq_len * size_per_head) + head_id * seq_len * size_per_head
+                              + word_id * size_per_head + size_id;
+        const int src_id = row_id * n + col_id;
+
+        T q              = ldg(&q_in[src_id]);
+        q_out[target_id] = add(q, ldg(&bias_q[col_id]));
+    }
+}
+
+template<typename T>
+__global__ void addKVBiasTranspose(T* k_out,
+                                    T* v_out,
+                                    const T* __restrict k_in,
+                                    const T* __restrict bias_k,
+                                    const T* __restrict v_in,
+                                    const T* __restrict bias_v,
+                                    const int  batch_size,
+                                    const int  seq_len,
+                                    const int  head_num,
+                                    const int  size_per_head)
+{
+    const int n        = head_num * size_per_head;
+    const int batch_id = blockIdx.x;
+    const int word_id  = blockIdx.y;
+    const int row_id   = batch_id * seq_len + word_id;
+
+    for (int col_id = threadIdx.x; col_id < n; col_id += blockDim.x) {
+        const int head_id   = col_id / size_per_head;
+        const int size_id   = col_id % size_per_head;
+        const int target_id = batch_id * (head_num * seq_len * size_per_head) + head_id * seq_len * size_per_head
+                              + word_id * size_per_head + size_id;
+        const int src_id = row_id * n + col_id;
+
+        T k = add(ldg(&k_in[src_id]), ldg(&bias_k[col_id]));
+        k_out[target_id] = k;
+
+        T v = add(ldg(&v_in[src_id]), ldg(&bias_v[col_id]));
+        v_out[target_id] = v;
+    }
+}
+
+template<typename T>
 __global__ void QKVIA3Transpose(T* q_out,
                                 T* k_out,
                                 T* v_out,
@@ -227,6 +285,89 @@ void invokeAddQKVBiasIA3Transpose(T*           q_buf,
     }
 }
 
+template<typename T>
+void invokeAddQBiasTranspose(T*           q_buf,
+                            T*           Q,
+                            const T*     bias_Q,
+                            const int    batch_size,
+                            const int    seq_len,
+                            const int    head_num,
+                            const int    size_per_head,
+                            cudaStream_t stream)
+{
+    const int k = head_num * size_per_head;
+    dim3      grid(batch_size, seq_len);
+    if (sizeof(T) == 4 || k % 2 != 0) {
+        dim3 block(min(k, 512));
+        addQBiasTranspose<T><<<grid, block, 0, stream>>>(q_buf,
+                                                        Q,
+                                                        bias_Q,
+                                                        batch_size,
+                                                        seq_len,
+                                                        head_num,
+                                                        size_per_head);
+        sync_check_cuda_error();
+    }
+    else {
+        using T2 = typename TypeConverter<T>::Type;  // fp16 to half2, bf16 to bf162
+        dim3 block(min(k / 2, 512));
+        addQBiasTranspose<T2><<<grid, block, 0, stream>>>((T2*)q_buf,
+                                                        (const T2*)Q,
+                                                        (const T2*)bias_Q,
+                                                        batch_size,
+                                                        seq_len,
+                                                        head_num,
+                                                        size_per_head / 2);
+        sync_check_cuda_error();
+    }
+}
+
+template<typename T>
+void invokeAddKVBiasTranspose(T*           k_buf,
+                            T*           v_buf,
+                            T*           K,
+                            const T*     bias_K,
+                            T*           V,
+                            const T*     bias_V,
+                            const int    batch_size,
+                            const int    seq_len,
+                            const int    head_num,
+                            const int    size_per_head,
+                            cudaStream_t stream)
+{
+    const int k = head_num * size_per_head;
+    dim3      grid(batch_size, seq_len);
+    if (sizeof(T) == 4 || k % 2 != 0) {
+        dim3 block(min(k, 512));
+        addKVBiasTranspose<T><<<grid, block, 0, stream>>>(k_buf,
+                                                        v_buf,
+                                                        K,
+                                                        bias_K,
+                                                        V,
+                                                        bias_V,
+                                                        batch_size,
+                                                        seq_len,
+                                                        head_num,
+                                                        size_per_head);
+        sync_check_cuda_error();
+    }
+    else {
+        using T2 = typename TypeConverter<T>::Type;  // fp16 to half2, bf16 to bf162
+        dim3 block(min(k / 2, 512));
+        addKVBiasTranspose<T2><<<grid, block, 0, stream>>>((T2*)k_buf,
+                                                            (T2*)v_buf,
+                                                            (const T2*)K,
+                                                            (const T2*)bias_K,
+                                                            (const T2*)V,
+                                                            (const T2*)bias_V,
+                                                            batch_size,
+                                                            seq_len,
+                                                            head_num,
+                                                            size_per_head / 2);
+        sync_check_cuda_error();
+    }
+}
+
 #define INSTANTIATEADDQKVBIASIA3TRANSPOSE(T)                                                                           \
     template void invokeAddQKVBiasIA3Transpose(T*           q_buf,                                                     \
                                                T*           k_buf,                                                     \
@@ -245,12 +386,51 @@ void invokeAddQKVBiasIA3Transpose(T*           q_buf,
                                                const T*     ia3_key_weights,                                           \
                                                const T*     ia3_value_weights,                                         \
                                                cudaStream_t stream)
+
+#define INSTANTIATEADDQBIASTRANSPOSE(T)                                                                           \
+    template void invokeAddQBiasTranspose(T*           q_buf,                                                     \
+                                        T*           Q,                                                         \
+                                        const T*     bias_Q,                                                    \
+                                        const int    batch_size,                                                \
+                                        const int    seq_len,                                                   \
+                                        const int    head_num,                                                  \
+                                        const int    size_per_head,                                             \
+                                        cudaStream_t stream)
+
+#define INSTANTIATEADDKVBIASTRANSPOSE(T)                                                                           \
+    template void invokeAddKVBiasTranspose(T*           k_buf,                                                     \
+                                            T*           v_buf,                                                     \
+                                            T*           K,                                                         \
+                                            const T*     bias_K,                                                    \
+                                            T*           V,                                                         \
+                                            const T*     bias_V,                                                    \
+                                            const int    batch_size,                                                \
+                                            const int    seq_len,                                                   \
+                                            const int    head_num,                                                  \
+                                            const int    size_per_head,                                             \
+                                            cudaStream_t stream)
+
 INSTANTIATEADDQKVBIASIA3TRANSPOSE(float);
 INSTANTIATEADDQKVBIASIA3TRANSPOSE(half);
 #ifdef ENABLE_BF16
 INSTANTIATEADDQKVBIASIA3TRANSPOSE(__nv_bfloat16);
 #endif
 #undef INSTANTIATEADDQKVBIASTRANSPOSE
+
+INSTANTIATEADDQBIASTRANSPOSE(float);
+INSTANTIATEADDQBIASTRANSPOSE(half);
+#ifdef ENABLE_BF16
+INSTANTIATEADDQBIASTRANSPOSE(__nv_bfloat16);
+#endif
+#undef INSTANTIATEADDQBIASTRANSPOSE
+
+INSTANTIATEADDKVBIASTRANSPOSE(float);
+INSTANTIATEADDKVBIASTRANSPOSE(half);
+#ifdef ENABLE_BF16
+INSTANTIATEADDKVBIASTRANSPOSE(__nv_bfloat16);
+#endif
+#undef INSTANTIATEADDKVBIASTRANSPOSE
+
 
 template<typename T, typename T_IN, int ITEMS_PER_THREAD>
 __global__ void softmax_kernel(T*          attn_score,
