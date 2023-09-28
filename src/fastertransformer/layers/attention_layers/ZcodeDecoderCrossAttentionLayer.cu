@@ -946,11 +946,19 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                             mem_cache_buf_,
                             hidden_units_);
 
-        invokeAddKVBiasTranspose(
+        invokeAddQBiasTranspose(
             q_buf_2_step0_,
-            mem_cache_buf_2_step0_,
             q_buf_step0_,
             attention_weights->query_weight.bias,
+            batch_size,
+            seq_len,
+            head_num_,
+            size_per_head_,
+            stream_
+        );
+
+        invokeAddQBiasTranspose(
+            mem_cache_buf_2_step0_,
             mem_cache_buf_,
             attention_weights->key_weight.bias,
             batch_size,
@@ -959,7 +967,7 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
             size_per_head_,
             stream_
         );
-
+        
         sync_check_cuda_error();
 
         // Q*K^T
@@ -1089,7 +1097,7 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     encoder_output_tensor.shape[2],
                                     mem_cache_buf_,
                                     hidden_units_);
-                transpose_4d_batch_major_memory_kernelLauncher<T>(
+                zcode_transpose_4d_batch_major_memory_kernelLauncher<T>(
                     key_mem_cache, mem_cache_buf_, batch_size, mem_max_seq_len, size_per_head_, head_num_, true, stream_);
                 sync_check_cuda_error();
 
@@ -1104,7 +1112,7 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     encoder_output_tensor.shape[2],
                                     mem_cache_buf_,
                                     hidden_units_);
-                transpose_4d_batch_major_memory_kernelLauncher<T>(value_mem_cache,
+                zcode_transpose_4d_batch_major_memory_kernelLauncher<T>(value_mem_cache,
                                                                 mem_cache_buf_,
                                                                 batch_size,
                                                                 mem_max_seq_len,
@@ -1141,6 +1149,14 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
             }
         }
         sync_check_cuda_error();
+
+        outputCrossAttentionParam<float> output_attention_param{};
+        // output cross attentions
+        if (output_cross_attentions) {
+            output_attention_param.max_decoder_seq_len        = max_decoder_seq_len;
+            output_attention_param.cross_attention_out        = output_tensors->at("cross_attentions").getPtr<float>();
+            output_attention_param.is_return_cross_attentions = true;
+        }
 
         zcode_cross_attention_dispatch<T>(q_buf_,
                                     attention_weights->query_weight.bias,

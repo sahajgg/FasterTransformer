@@ -127,13 +127,13 @@ public:
                  const std::vector<Tensor>* input_tensors,
                  const TensorMap*           pos_query_cache,
                  const TensorMap*           pos_key_cache,
-                 const std::vector<ZcodeDecoderLayerWeight<T>*>*    deberta_layer_weights);
+                 const std::vector<ZcodeDecoderLayerWeight<T>>*    deberta_layer_weights);
     void forward(
         TensorMap* output_tensors, 
         TensorMap* input_tensors, 
         const TensorMap* pos_query_cache,
         const TensorMap* pos_key_cache,
-        const std::vector<ZcodeDecoderLayerWeight<T>*>* deberta_layer_weights
+        const std::vector<ZcodeDecoderLayerWeight<T>>* deberta_layer_weights
     );
 };
 

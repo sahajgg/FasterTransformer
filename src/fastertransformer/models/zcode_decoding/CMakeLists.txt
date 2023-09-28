@@ -14,9 +14,14 @@
 
 cmake_minimum_required(VERSION 3.8)
 
-add_library(DebertaDecoding STATIC DebertaDecoding.cc DebertaDecodingWeight.cc)
+add_library(ZcodeDecodingWeight STATIC DebertaWeight.cc)
+set_property(TARGET ZcodeDecodingWeight PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET ZcodeDecodingWeight PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+target_link_libraries(ZcodeDecodingWeight PUBLIC ZcodeDecoderLayerWeight)
+
+add_library(DebertaDecoding STATIC DebertaDecoding.cc)
 set_property(TARGET DebertaDecoding PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET DebertaDecoding PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(DebertaDecoding PUBLIC -lcudart cublasMMWrapper ZcodeDecoder bert_preprocess_kernels
                                         decoding_kernels DynamicDecodeLayer BaseBeamSearchLayer 
-                                        beam_search_topk_kernels gpt_kernels tensor cuda_utils logger)
+                                        beam_search_topk_kernels gpt_kernels layernorm_kernels activation_kernels tensor cuda_utils logger)

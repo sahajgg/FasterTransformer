@@ -24,6 +24,7 @@
 #include "src/fastertransformer/models/zcode_decoder/Deberta.h"
 #include "src/fastertransformer/models/zcode_decoding/DebertaWeight.h"
 #include "src/fastertransformer/utils/custom_ar_comm.h"
+#include "src/fastertransformer/kernels/activation_kernels.h"
 
 namespace fastertransformer {
 
@@ -84,20 +85,15 @@ private:
 protected:
     T*       padded_embedding_kernel_                = nullptr;
     const T* padded_embedding_kernel_ptr_            = nullptr;
-    T*       padded_post_decoder_embedding_bias_     = nullptr;
-    const T* padded_post_decoder_embedding_bias_ptr_ = nullptr;
-    T*       relative_attention_bias_                = nullptr;
 
     T*              deberta_emb_buf_           = nullptr;
-    const int*      decoding_sequence_lengths_ = nullptr;
+    int*      decoding_sequence_lengths_ = nullptr;
 
     T*                 decoder_input_buf_         = nullptr;
     T*                 decoder_output_buf_        = nullptr;
-    T*                 normed_decoder_output_buf_ = nullptr;
     
-    DynamicDecodeType* logits_buf_iter            = nullptr;
-    DynamicDecodeType* logits_buf_                = nullptr;
-    DynamicDecodeType* nccl_logits_buf_           = nullptr;
+    T* logits_buf_iter                            = nullptr;
+    T* logits_buf_                                = nullptr;
     float*             cum_log_probs_             = nullptr;
     bool*              finished_buf_              = nullptr;
     bool*              h_finished_buf_            = nullptr;

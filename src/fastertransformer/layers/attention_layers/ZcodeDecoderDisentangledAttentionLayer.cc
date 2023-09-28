@@ -46,8 +46,10 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
     const int new_cache_seq_len = current_cache_seq_len + request_seq_len;
     allocateBuffer(request_batch_size, request_seq_len, new_cache_seq_len);
 
-    FT_CHECK_WITH_INFO((!input_tensors->isExist("cache_indirection")) || (!input_tensors->isValid("cache_indirection")), 
-        std::string("beam_size > 1 not supported"));
+    if(input_tensors->isExist("cache_indirection")){
+        T* cache_indirection = input_tensors->getPtr<T>("cache_indirection");
+        FT_CHECK_WITH_INFO(cache_indirection == nullptr, std::string("beam_size > 1 not supported"));
+    }
 
     T*         hidden_features     = output_tensors->getPtr<T>("hidden_features");
     T*         key_cache           = output_tensors->getPtr<T>("key_cache");
@@ -460,6 +462,7 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::freeBuffer()
         allocator_->free((void**)(&qkv_buf_));
         allocator_->free((void**)(&qkv_buf_2_));
         allocator_->free((void**)(&batch_qkv_kernel_ptr_));
+        allocator_->free((void**)(&attention_mask_));
         sync_check_cuda_error();
         is_allocate_buffer_ = false;
     }

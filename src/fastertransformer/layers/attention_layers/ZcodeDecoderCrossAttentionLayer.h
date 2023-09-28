@@ -17,6 +17,7 @@
 #pragma once
 
 #include "src/fastertransformer/layers/attention_layers/BaseAttentionLayer.h"
+#include "src/fastertransformer/kernels/bert_preprocess_kernels.h"
 
 namespace fastertransformer {
 

@@ -34,7 +34,7 @@ ZcodeDecodingWeight<T>::ZcodeDecodingWeight(const size_t hidden_units,
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
 
-    // 7: [1] word embedding weight [2] word-LN weight [3] word-LN bias [4-5] lm head weight [6-7] lm head LN weight
+    // 8: [1] word embedding weight [2] word-LN weight [3] word-LN bias [4-5] lm head weight [6-7] lm head LN weight [8] lm head bias
     weights_size[0] = vocab_size_ * hidden_units_;
     weights_size[1] = hidden_units_;
     weights_size[2] = hidden_units_;
@@ -42,6 +42,7 @@ ZcodeDecodingWeight<T>::ZcodeDecodingWeight(const size_t hidden_units,
     weights_size[4] = hidden_units_;
     weights_size[5] = hidden_units_;
     weights_size[6] = hidden_units_;
+    weights_size[7] = vocab_size_;
 
     for (int i = 0; i < weights_num_; i++) {
         deviceMalloc(&weights_ptr[i], weights_size[i]);
@@ -68,10 +69,11 @@ ZcodeDecodingWeight<T>::~ZcodeDecodingWeight()
         word_embedding_table                       = nullptr;
         word_embedding_layernorm_weights.gamma     = nullptr;
         word_embedding_layernorm_weights.beta      = nullptr;
-        lm_head_weights.kernel                     = nullptr;
-        lm_head_weights.bias                       = nullptr;
+        lm_head_dense_weights.kernel               = nullptr;
+        lm_head_dense_weights.bias                 = nullptr;
         lm_head_layernorm_weights.gamma            = nullptr;
         lm_head_layernorm_weights.beta             = nullptr;
+        lm_head_bias                               = nullptr;
 
         is_maintain_buffer = false;
     }
@@ -160,6 +162,8 @@ void ZcodeDecodingWeight<T>::loadModel(std::string dir_path)
                          model_file_type);
     loadWeightFromBin<T>(
         weights_ptr[6], {(size_t)weights_size[6]}, dir_path + "/model.lm_head.LayerNorm.bias.bin", model_file_type);
+    loadWeightFromBin<T>(
+        weights_ptr[7], {(size_t)weights_size[7]}, dir_path + "/model.lm_head.bias.bin", model_file_type);
     
 
     for (uint l = 0; l < num_layer_; l++) {
@@ -174,10 +178,11 @@ void ZcodeDecodingWeight<T>::setWeightPtr()
     word_embedding_table                   = weights_ptr[0];
     word_embedding_layernorm_weights.gamma = weights_ptr[1];
     word_embedding_layernorm_weights.beta  = weights_ptr[2];
-    lm_head_weights.kernel                 = weights_ptr[3];
-    lm_head_weights.bias                   = weights_ptr[4];
+    lm_head_dense_weights.kernel           = weights_ptr[3];
+    lm_head_dense_weights.bias             = weights_ptr[4];
     lm_head_layernorm_weights.gamma        = weights_ptr[5];
     lm_head_layernorm_weights.beta         = weights_ptr[6];
+    lm_head_bias                           = weights_ptr[7];
 
     is_maintain_buffer = true;
 }

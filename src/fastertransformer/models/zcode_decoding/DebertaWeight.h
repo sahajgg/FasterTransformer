@@ -35,10 +35,11 @@ struct ZcodeDecodingWeight {
     ZcodeDecodingWeight(const ZcodeDecodingWeight& other);
     ZcodeDecodingWeight&                     operator=(const ZcodeDecodingWeight& other);
     std::vector<ZcodeDecoderLayerWeight<T>>    decoder_layer_weights;
-    DenseWeight<T>                             lm_head_weights;
+    DenseWeight<T>                             lm_head_dense_weights;
     LayerNormWeight<T>                         lm_head_layernorm_weights;
     const T*                                   word_embedding_table = nullptr;
     LayerNormWeight<T>                         word_embedding_layernorm_weights;
+    const T*                                   lm_head_bias = nullptr;
 ;
     void loadModel(std::string dir_path);
 
@@ -53,8 +54,8 @@ private:
     size_t num_layer_;
     bool   is_maintain_buffer = false;
 
-    // 7: [1] word embedding weight [2] word-LN weight [3] word-LN bias [4-5] lm head weight [6-7] lm head LN weight
-    const static int weights_num_ = 7;
+    // 8: [1] word embedding weight [2] word-LN weight [3] word-LN bias [4-5] lm head weight [6-7] lm head LN weight [8] lm head bias
+    const static int weights_num_ = 8;
     T*               weights_ptr[weights_num_];
     size_t           weights_size[weights_num_];
 };

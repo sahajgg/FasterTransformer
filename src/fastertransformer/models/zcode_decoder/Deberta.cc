@@ -300,7 +300,7 @@ void ZcodeDecoder<T>::forward(std::vector<Tensor>*         output_tensors,
                          const std::vector<Tensor>*        input_tensors,
                          const TensorMap*                  pos_query_cache,
                          const TensorMap*                  pos_key_cache,
-                         const std::vector<ZcodeDecoderLayerWeight<T>*>* deberta_layer_weights)
+                         const std::vector<ZcodeDecoderLayerWeight<T>>* deberta_layer_weights)
 {
     TensorMap input_tensors_map = TensorMap({
             {"decoder_input", input_tensors->at(0)},
@@ -329,7 +329,7 @@ void ZcodeDecoder<T>::forward(
     TensorMap*                        input_tensors, 
     const TensorMap*                  pos_query_cache,
     const TensorMap*                  pos_key_cache,
-    const std::vector<ZcodeDecoderLayerWeight<T>*>* deberta_layer_weights
+    const std::vector<ZcodeDecoderLayerWeight<T>>* deberta_layer_weights
 )
 {
     // input tensors:
@@ -361,7 +361,6 @@ void ZcodeDecoder<T>::forward(
     FT_CHECK(input_tensors->at("input_ids").shape.size() == 2);
     allocateBuffer(request_batch_size, request_seq_len);
 
-    const size_t   mem_max_seq_len = input_tensors->at("encoder_output").shape[1];
     const uint     ite             = input_tensors->at("ite").getVal<uint>();
     const int      step            = input_tensors->at("step").getVal<int>();
     DataType       data_type       = getTensorType<T>();
@@ -379,7 +378,7 @@ void ZcodeDecoder<T>::forward(
 
     const std::vector<size_t> mem_cache_shape = {request_batch_size, output_tensors->at("key_mem_cache").shape[2], output_tensors->at("key_mem_cache").shape[3]};
 
-    // Encoder layers
+    // Decoder layers
     for (uint l = 0; l < num_layer_; l++) {
         if (!isValidLayerParallelId(l)) {
             continue;
@@ -387,7 +386,6 @@ void ZcodeDecoder<T>::forward(
         T* decoder_input  = l == 0 ? input_tensors->at("decoder_input").getPtr<T>() : decoder_layer_output_;
         T* decoder_output = (l == num_layer_ - 1) ? output_tensors->at("decoder_output").getPtr<T>() : decoder_layer_output_;
         const ZcodeDecoderLayerWeight<T>& layer_weight = deberta_layer_weights->at(l);
-        const size_t mem_cache_offset = l * request_batch_size * mem_max_seq_len * hidden_units_;
 
         if (isFirstLayerParallelId(l) == true && pipeline_para_.rank_ != 0 && pipeline_para_.world_size_ > 1) {
             ftNcclRecv(decoder_input + request_batch_size * hidden_units_ / tensor_para_.world_size_ * tensor_para_.rank_,

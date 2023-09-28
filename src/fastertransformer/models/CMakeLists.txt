@@ -38,3 +38,5 @@ add_subdirectory(vit_int8)
 
 add_subdirectory(wenet)
 add_subdirectory(zcode_encoder)
+add_subdirectory(zcode_decoder)
+add_subdirectory(zcode_decoding)
