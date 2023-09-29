@@ -23,8 +23,8 @@
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
 #include "src/fastertransformer/layers/TensorParallelGeluFfnLayer.h"
 #include "src/fastertransformer/layers/TensorParallelReluFfnLayer.h"
-#include "src/fastertransformer/layers/attention_layers/TensorParallelZcodeDecoderDisentangledAttentionLayer.h"
-#include "src/fastertransformer/layers/attention_layers/TensorParallelZcodeDecoderCrossAttentionLayer.h"
+#include "src/fastertransformer/layers/attention_layers/ZcodeDecoderDisentangledAttentionLayer.h"
+#include "src/fastertransformer/layers/attention_layers/DecoderCrossAttentionLayer.h"
 #include "src/fastertransformer/models/zcode_decoder/DebertaLayerWeight.h"
 #include "src/fastertransformer/utils/nccl_utils.h"
 

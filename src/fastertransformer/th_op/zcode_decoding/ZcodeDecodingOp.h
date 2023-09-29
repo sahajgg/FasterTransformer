@@ -194,7 +194,6 @@ public:
                 th::optional<th::Tensor>& bad_words_list_opt,
                 th::optional<th::Tensor>& stop_words_list_opt) override
     {
-
         size_t beam_width = beam_width_opt.has_value() ? (size_t)beam_width_opt.value() : 1;
         uint   top_k      = top_k_opt.has_value() ? (uint)top_k_opt.value() : 1;
         float  top_p      = top_p_opt.has_value() ? (float)top_p_opt.value() : 0.0f;
@@ -218,10 +217,10 @@ public:
         cublasSetStream(_cublasHandle, stream);
         ft::Allocator<ft::AllocatorType::TH>* allocator = new ft::Allocator<ft::AllocatorType::TH>();
         ft::cublasMMWrapper* cublas_wrapper = new ft::cublasMMWrapper(_cublasHandle, _cublasltHandle, stream, cublas_algo_map_, cublas_wrapper_mutex_, allocator);
-
+        
         int device_id = 0;
         ft::check_cuda_error(cudaGetDevice(&device_id));
-        ft::check_cuda_error(cudaGetDeviceProperties(prop_, device_id));
+        ft::check_cuda_error(cudaGetDeviceProperties(&prop_, device_id));
 
         if (std::is_same<T, half>::value) {
             cublas_wrapper->setFP16GemmConfig();
@@ -259,7 +258,7 @@ public:
                                                      cublas_wrapper,
                                                      allocator,
                                                      true,
-                                                     prop_,
+                                                     &prop_,
                                                      ft::ActivationType::Gelu);
 
         ft::DataType            data_type     = ft::getTensorType<T>();
@@ -341,7 +340,7 @@ public:
                                                 ft::TYPE_INT32,
                                                 std::vector<size_t>{batch_size, beam_width, max_seq_len},
                                                 get_ptr<int>(output_ids)}},
-                                    {"sequence_length",
+                                    {"output_sequence_length",
                                     ft::Tensor{ft::MEMORY_GPU,
                                                 ft::TYPE_INT32,
                                                 std::vector<size_t>{batch_size, beam_width},
@@ -373,17 +372,17 @@ private:
     const size_t            _inter_size;
     const size_t            _layer_num;
     const size_t            _vocab_size;
-    std::vector<th::Tensor> _weights;
-
     const float             _q_scaling;
     const int               _end_id;
+    std::vector<th::Tensor> _weights;
+
     ft::NcclParam           tensor_para_;
     ft::NcclParam           pipeline_para_;
     cublasLtHandle_t        _cublasltHandle;
     std::mutex*          cublas_wrapper_mutex_;
     ft::cublasAlgoMap*   cublas_algo_map_;
     ft::ZcodeDecodingWeight<T> deberta_weights;
-    struct cudaDeviceProp*   prop_;
+    struct cudaDeviceProp   prop_;
 };
 
 class FasterTransformerZcodeDecoding: public th::jit::CustomClassHolder {

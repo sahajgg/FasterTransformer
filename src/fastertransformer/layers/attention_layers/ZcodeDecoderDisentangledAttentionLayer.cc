@@ -41,8 +41,11 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
     const size_t request_batch_size = input_tensors->at("input_query").shape[0];
     const size_t request_seq_len    = input_tensors->at("input_query").shape[1];
     const int current_cache_seq_len    = input_tensors->at("current_cache_seq_len").getVal<int>();
+    const int max_cache_seq_len        = output_tensors->at("key_cache").shape[2];
     const bool   output_attentions  = output_tensors->isExist("attentions");
-    const int cache_offset = request_batch_size * current_cache_seq_len * hidden_units_;
+    
+    // int cache_offset = request_batch_size * current_cache_seq_len * hidden_units_;
+    int cache_offset;
     const int new_cache_seq_len = current_cache_seq_len + request_seq_len;
     allocateBuffer(request_batch_size, request_seq_len, new_cache_seq_len);
 
@@ -145,6 +148,15 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
     }
 #endif
 
+    // transpose_4d_batch_major_memory_step_kernelLauncher(
+    //     key_cache,
+    //     k_buf_,
+    //     request_batch_size,
+    //     max_cache_seq_len,
+    //     size_per_head_,
+        
+    // );
+
     // add QKV bias (bias optional, can be nullptr) & permute
     // [batch, seq_len, num_heads*head_size] or [token_num, num_heads*head_size] --> [batch, num_heads, seq_len, head_size]
     invokeAddQKVBiasIA3Transpose(q_buf_2_,
@@ -166,9 +178,15 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
                                     stream_);
     sync_check_cuda_error();
     
-
-    cudaD2Dcpy(key_cache + cache_offset, k_buf_2_, request_batch_size * request_seq_len * hidden_units_ * sizeof(T));
-    cudaD2Dcpy(value_cache + cache_offset, v_buf_2_, request_batch_size * request_seq_len * hidden_units_ * sizeof(T));
+    for (int i = 0; i < request_batch_size; i++) {
+        for (int j = 0; j < head_num_; j++) {
+            cache_offset = (i * max_cache_seq_len * hidden_units_) + (j * max_cache_seq_len * size_per_head_) + (new_cache_seq_len * size_per_head_);
+            cudaMemcpyAsync(key_cache + cache_offset, k_buf_2_ + (i * request_seq_len * hidden_units_) + (j * request_seq_len * size_per_head_), request_seq_len * size_per_head_ * sizeof(T), cudaMemcpyDeviceToDevice);
+            cudaMemcpyAsync(value_cache + cache_offset, v_buf_2_ + (i * request_seq_len * hidden_units_) + (j * request_seq_len * size_per_head_), request_seq_len * size_per_head_ * sizeof(T), cudaMemcpyDeviceToDevice);
+        }
+    }
+    // cudaD2Dcpy(key_cache + cache_offset, k_buf_2_, request_batch_size * request_seq_len * hidden_units_ * sizeof(T));
+    // cudaD2Dcpy(value_cache + cache_offset, v_buf_2_, request_batch_size * request_seq_len * hidden_units_ * sizeof(T));
 
     float scalar = 1 / sqrtf(size_per_head_ * q_scaling_);
 
@@ -440,7 +458,6 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::allocateBuffer(size_t batch_size
     batch_qkv_kernel_ptr_    = (T**)allocator_->reMalloc(batch_qkv_kernel_ptr_, sizeof(T*) * 12, false);
     batch_qkv_input_ptr_     = batch_qkv_kernel_ptr_ + 4;
     batch_qkv_buf_ptr_       = batch_qkv_input_ptr_ + 4;
-    attention_mask_ = (T*)allocator_->reMalloc(attention_mask_, sizeof(T) * batch_size * seq_len * new_cache_seq_len, false);
 
     cudaMemsetAsync(qk_buf_, (T)(0.0f), sizeof(T) * batch_size * head_num_ * new_cache_seq_len * new_cache_seq_len, stream_);
     cudaMemsetAsync(QcKr_buf_, (T)(0.0f), sizeof(T) * 2 * batch_size * head_num_ * new_cache_seq_len * 2 * attention_span_, stream_);
@@ -462,7 +479,7 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::freeBuffer()
         allocator_->free((void**)(&qkv_buf_));
         allocator_->free((void**)(&qkv_buf_2_));
         allocator_->free((void**)(&batch_qkv_kernel_ptr_));
-        allocator_->free((void**)(&attention_mask_));
+        
         sync_check_cuda_error();
         is_allocate_buffer_ = false;
     }

@@ -677,6 +677,58 @@ __global__ void transpose_4d_batch_major_mem_v_cache(
     val_dst[out_idx] = val_src[v_seq_len_id * head_num * size_per_head_div_x + v_head_size_id];
 }
 
+// template<typename T>
+// __global__ void add_4d_batch_major_mem_step_cache(
+//     T* v_dst, const T* v_src, const int head_num, const int size_per_head, const int max_seq_len, const int cache_offset, const int curr_len)
+// {
+//     // B, L, H, Dh -> B, H, L, Dh
+//     const int batch_id = blockIdx.y;
+//     const int head_id  = blockIdx.z;
+
+//     // 16 byte loads will handle "x" dimension
+//     auto val_src = reinterpret_cast<const uint4*>(v_src + batch_id * head_num * size_per_head * curr_len
+//                                                   + head_id * size_per_head);
+//     auto val_dst = reinterpret_cast<uint4*>(v_dst + batch_id * head_num * size_per_head * max_seq_len
+//                                             + head_id * size_per_head * max_seq_len + cache_offset * size_per_head);
+
+//     // idx is over output dimension L * size_per_head / x for values
+//     const int out_idx = (cache_offset + blockIdx.x) * blockDim.x + threadIdx.x;
+
+//     constexpr int X_ELEMS             = (sizeof(T) == 4) ? 4 : 8;
+//     const int     size_per_head_div_x = size_per_head / X_ELEMS;
+//     if (out_idx >= size_per_head_div_x * max_seq_len) {
+//         return;
+//     }
+
+//     int       idx            = blockIdx.x * blockDim.x + threadIdx.x;
+//     const int v_head_size_id = idx % size_per_head_div_x;
+//     idx                      = (idx - v_head_size_id) / size_per_head_div_x;
+//     const int v_seq_len_id   = idx % curr_len;
+
+//     val_dst[out_idx] = val_src[v_seq_len_id * head_num * size_per_head_div_x + v_head_size_id];
+// }
+
+// template<typename T>
+// void add_4d_batch_major_memory_step_kernelLauncher(T*           dst,
+//                                                     const T*     src,
+//                                                     const int    local_batch_size,
+//                                                     const int    max_seq_len,
+//                                                     const int    size_per_head,
+//                                                     const int    local_head_num,
+//                                                     const int    cache_offset,
+//                                                     const int    curr_len,
+//                                                     cudaStream_t stream)
+// {
+//     constexpr int block_sz = 128;
+
+//     constexpr int x    = (sizeof(T) == 4) ? 4 : 8;
+//     int           size = curr_len * size_per_head / x;
+//     dim3          grid((size + block_sz - 1) / block_sz, local_batch_size, local_head_num);
+
+//     add_4d_batch_major_mem_step_cache<<<grid, block_sz, 0, stream>>>(
+//             dst, src, local_head_num, size_per_head, max_seq_len, cache_offset, curr_len);
+// }
+
 template<typename T>
 void transpose_4d_batch_major_memory_kernelLauncher(T*           dst,
                                                     const T*     src,

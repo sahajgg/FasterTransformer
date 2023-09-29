@@ -76,7 +76,7 @@ void DebertaDecoding<T>::allocateBuffer(
     const size_t self_cache_size = num_layer_ * batchxbeam * (max_seq_len + 1) * hidden_units_;
     const size_t mem_cache_size = num_layer_ * batchxbeam * max_mem_seq_len * hidden_units_;
 
-    deberta_emb_buf_   = (T*)(allocator_->malloc(sizeof(T) * batchxbeam * seq_len * d_model_, false));
+    // deberta_emb_buf_   = (T*)(allocator_->malloc(sizeof(T) * batchxbeam * seq_len * d_model_, false));
     decoder_input_buf_  = (T*)(allocator_->reMalloc(decoder_input_buf_, sizeof(T) * batchxbeam * d_model_, false));
     decoder_output_buf_ = (T*)(allocator_->reMalloc(decoder_output_buf_, sizeof(T) * batchxbeam * d_model_, false));
     decoding_sequence_lengths_ = (int*)(allocator_->reMalloc(decoding_sequence_lengths_, sizeof(int) * batchxbeam, false));
@@ -545,25 +545,45 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
         
         // Do Step 0: Process Decoder inputs and build KV Cache
         if (step == 1){
-            // Word embedding layer [batchxbeam, seq_len] --> [batchxbeam, seq_len, hidden_size]
-            invokeInputIdsEmbeddingLookupPosEncoding(
-                deberta_emb_buf_,
-                nullptr,
+            // Word embedding layer [batchxbeam, seq_len] --> [batchxbeam, seq_len, hidden_size] [seq_len = 1 always assumed]
+            // ZcodeDecoderDisentangledAttentionLayer supports seq_len > 1 but DecoderCrossAttentionLayer does not.
+            // ZcodeDecoderCrossAttentionLayer supports seq_len > 1 but is less optimal performance than DecoderCrossAttentionLayer.
+            
+            invokeEmbeddingLookupPosEncodingPadCount(
+                decoder_input_buf_,
                 decoding_weights->word_embedding_table,
-                (T*)nullptr,  // word embedding only, position embedding was replaced by relative embedding design in
-                                // DeBERTa
-                pPromptTuningParam<T>{},
+                (T*)nullptr,  // word embedding only, position embedding was replaced by relative embedding design in DeBERTa
                 input_tensors->at("input_ids").getPtr<int>(),
-                1,
-                decoder_seq_len,
-                decoder_seq_len,
+                (int*)nullptr,
+                pPromptTuningParam<T>{},
                 batchxbeam,
                 hidden_units_,
-                stream_);
-            sync_check_cuda_error();
+                (T)1.0f,
+                0, //step
+                batchxbeam,
+                0, // ite
+                1, // seq len
+                stream_
+            );
 
-            invokeGeneralLayerNorm(deberta_emb_buf_,
-                                deberta_emb_buf_,
+            // invokeInputIdsEmbeddingLookupPosEncoding(
+            //     deberta_emb_buf_,
+            //     nullptr,
+            //     decoding_weights->word_embedding_table,
+            //     (T*)nullptr,  // word embedding only, position embedding was replaced by relative embedding design in
+            //                     // DeBERTa
+            //     pPromptTuningParam<T>{},
+            //     input_tensors->at("input_ids").getPtr<int>(),
+            //     0,
+            //     decoder_seq_len,
+            //     decoder_seq_len,
+            //     batchxbeam,
+            //     hidden_units_,
+            //     stream_);
+            // sync_check_cuda_error();
+
+            invokeGeneralLayerNorm(decoder_input_buf_,
+                                decoder_input_buf_,
                                 decoding_weights->word_embedding_layernorm_weights.gamma,
                                 decoding_weights->word_embedding_layernorm_weights.beta,
                                 layernorm_eps_,
@@ -574,9 +594,15 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                                 stream_);
             sync_check_cuda_error();
 
+            // std::cout << "encoder_output" << std::endl;
+            // print_to_screen(encoder_output_ptr_, 10);
+            // print_to_screen(encoder_output_ptr_ + (input_tensors->at("encoder_output").shape[2]), 10);
+            // print_to_screen(encoder_output_ptr_ + (input_tensors->at("encoder_output").shape[1] * input_tensors->at("encoder_output").shape[2]), 10);
+            // std::cout << std::endl;
+
             step_tmp = 0;
             TensorMap decoder_input_tensors_step0({
-                {"decoder_input", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, decoder_seq_len, d_model_}, deberta_emb_buf_}},
+                {"decoder_input", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, decoder_seq_len, d_model_}, decoder_input_buf_}},
                 {"attention_mask", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, 1, decoder_seq_len, decoder_seq_len}, attention_mask_}},
                 {"current_cache_seq_len", Tensor{MEMORY_CPU, TYPE_INT32, std::vector<size_t>{1}, &step_tmp}},
                 {"encoder_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam,
@@ -584,14 +610,14 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                         input_tensors->at("encoder_output").shape[2]}, encoder_output_ptr_}},
                 {"encoder_sequence_length", Tensor{MEMORY_GPU, TYPE_INT32, std::vector<size_t>{batchxbeam}, encoder_sequence_length_ptr_}},
                 {"finished", Tensor{MEMORY_GPU, TYPE_BOOL, std::vector<size_t>{batchxbeam}, finished_buf_}},
-                {"step", Tensor{MEMORY_CPU, TYPE_INT32, std::vector<size_t>{1}, &step_tmp}},
+                {"step", Tensor{MEMORY_CPU, TYPE_INT32, std::vector<size_t>{1}, &step}},
                 {"ite", Tensor{MEMORY_CPU, TYPE_UINT32, std::vector<size_t>{1}, &ite}},
                 {"cache_indirection", Tensor{MEMORY_GPU, TYPE_INT32, std::vector<size_t>{batch_size, beam_width, max_seq_len + 1}, 
                         beam_width > 1 ? cache_indirections_[src_indir_idx]: nullptr}}
             });
 
             TensorMap decoder_output_tensors_step0{
-                {"decoder_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, d_model_}, decoder_output_buf_}},
+                {"decoder_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, decoder_seq_len, d_model_}, decoder_output_buf_}},
                 {"key_cache", Tensor{MEMORY_GPU, data_type, self_k_cache_shape, key_cache_}},
                 {"value_cache", Tensor{MEMORY_GPU, data_type, self_v_cache_shape, value_cache_}},
                 {"key_mem_cache", Tensor{MEMORY_GPU, data_type, mem_cache_shape, key_mem_cache_}},
@@ -600,9 +626,10 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
 
             decoder_->forward(&decoder_output_tensors_step0, &decoder_input_tensors_step0, pos_query_cache, pos_key_cache, &decoding_weights->decoder_layer_weights);
 
-            if (is_free_buffer_after_forward_) {
-                allocator_->free((void**)(&deberta_emb_buf_));
-            }
+            // std::cout << "decoder_output_buf_" << std::endl;
+            // print_to_screen(decoder_output_buf_, 10);
+            // print_to_screen(decoder_output_buf_ + (decoder_seq_len * d_model_), 10);
+            // std::cout << std::endl;
         }
 
         // Start Decoding Process
@@ -653,7 +680,7 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
         });
 
         TensorMap decoder_output_tensors{
-            {"decoder_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, d_model_}, decoder_output_buf_}},
+            {"decoder_output", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, 1, d_model_}, decoder_output_buf_}},
             {"key_cache", Tensor{MEMORY_GPU, data_type, self_k_cache_shape, key_cache_}},
             {"value_cache", Tensor{MEMORY_GPU, data_type, self_v_cache_shape, value_cache_}},
             {"key_mem_cache", Tensor{MEMORY_GPU, data_type, mem_cache_shape, key_mem_cache_}},
@@ -680,6 +707,7 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                                 logits_buf_iter,
                                 d_model_ /* n */
                             );
+        sync_check_cuda_error();
 
         invokeAddBiasGeluV2(
             logits_buf_iter,
@@ -690,6 +718,7 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
             d_model_,
             stream_
         );
+        sync_check_cuda_error();
 
         invokeGeneralLayerNorm(logits_buf_iter,
                                logits_buf_iter,
@@ -701,8 +730,8 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                                (float*)nullptr,
                                0,
                                stream_);
-
-        cublas_wrapper_->Gemm(CUBLAS_OP_N,
+        sync_check_cuda_error();
+        cublas_wrapper_->Gemm(CUBLAS_OP_T,
                                 CUBLAS_OP_N,
                                 vocab_size_padded_,  // n
                                 batchxbeam, // batch
@@ -715,6 +744,7 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                                 logits_buf_,
                                 vocab_size_padded_ /* n */
                             );
+        sync_check_cuda_error();
 
         // Start Decoding Process
         bool is_initialize_random_table = step == 1;

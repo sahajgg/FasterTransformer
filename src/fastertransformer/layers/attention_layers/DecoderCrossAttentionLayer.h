@@ -88,4 +88,15 @@ public:
     forward(TensorMap* output_tensors, TensorMap* input_tensors, const AttentionWeight<T>* attention_weights) override;
 };
 
+// template<typename T>
+// void transpose_4d_batch_major_memory_step_kernelLauncher(T*           dst,
+//                                                     const T*     src,
+//                                                     const int    local_batch_size,
+//                                                     const int    max_seq_len,
+//                                                     const int    size_per_head,
+//                                                     const int    local_head_num,
+//                                                     const int    cache_offset,
+//                                                     const int    curr_len,
+//                                                     cudaStream_t stream);
+
 }  // namespace fastertransformer

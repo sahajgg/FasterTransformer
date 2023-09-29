@@ -102,9 +102,9 @@ void TensorParallelZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*       
     //      hidden_features [batch_size, hidden_dimension],
     //      key_cache [batch, head_num, size_per_head // x, max_seq_len, x]
     //      value_cache [batch, head_num, max_seq_len, size_per_head]
-
+    
     const size_t size = output_tensors->at("hidden_features").size();
-    std::vector<Tensor> reduce_tensor{output_tensors->at("hidden_features")};
+    std::vector<Tensor> reduce_tensor = {output_tensors->at("hidden_features")};
 
     bool use_custom_all_reduce_kernel = false;
     if (enable_custom_all_reduce_ && custom_all_reduce_comm_ != nullptr) {

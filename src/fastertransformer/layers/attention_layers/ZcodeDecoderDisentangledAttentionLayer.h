@@ -17,6 +17,7 @@
 #pragma once
 
 #include "src/fastertransformer/layers/attention_layers/BaseAttentionLayer.h"
+#include "src/fastertransformer/layers/attention_layers/DecoderCrossAttentionLayer.h"
 
 namespace fastertransformer {
 
@@ -58,8 +59,6 @@ protected:
     T** batch_qkv_kernel_ptr_    = nullptr;
     T** batch_qkv_input_ptr_     = nullptr;
     T** batch_qkv_buf_ptr_       = nullptr;
-
-    T* attention_mask_           = nullptr;
 public:
     ZcodeDecoderDisentangledAttentionLayer(size_t           max_batch_size,
                                size_t           max_seq_len,

@@ -39,7 +39,7 @@ private:
     size_t max_mem_seq_len_ = 0;
 
     void allocateBuffer() override;
-    void allocateBuffer(size_t batch_size, size_t max_mem_seq_len, size_t seq_len);
+    void allocateBuffer(size_t batch_size, size_t max_mem_seq_len, size_t seq_len, int step);
     void freeBuffer() override;
 
 protected:

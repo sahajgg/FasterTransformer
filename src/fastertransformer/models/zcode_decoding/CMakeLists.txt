@@ -22,6 +22,6 @@ target_link_libraries(ZcodeDecodingWeight PUBLIC ZcodeDecoderLayerWeight)
 add_library(DebertaDecoding STATIC DebertaDecoding.cc)
 set_property(TARGET DebertaDecoding PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET DebertaDecoding PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
-target_link_libraries(DebertaDecoding PUBLIC -lcudart cublasMMWrapper ZcodeDecoder bert_preprocess_kernels
+target_link_libraries(DebertaDecoding PUBLIC -lcudart cublasMMWrapper ZcodeDecoder ZcodeDecodingWeight bert_preprocess_kernels
                                         decoding_kernels DynamicDecodeLayer BaseBeamSearchLayer 
                                         beam_search_topk_kernels gpt_kernels layernorm_kernels activation_kernels tensor cuda_utils logger)

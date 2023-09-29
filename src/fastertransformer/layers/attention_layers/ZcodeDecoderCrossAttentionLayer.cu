@@ -740,10 +740,10 @@ void ZcodeDecoderCrossAttentionLayer<T>::allocateBuffer()
 }
 
 template<typename T>
-void ZcodeDecoderCrossAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t max_mem_seq_len, size_t seq_len)
+void ZcodeDecoderCrossAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t max_mem_seq_len, size_t seq_len, int step)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
-    if(seq_len == 1){
+    if(step > 0){
         q_buf_ = (T*)(allocator_->reMalloc(q_buf_, sizeof(T) * batch_size * seq_len * hidden_units_, false));
         context_buf_ = (T*)(allocator_->reMalloc(context_buf_, sizeof(T) * batch_size * seq_len * hidden_units_, false));
     }
@@ -893,7 +893,7 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
     FT_LOG_DEBUG("%s", __PRETTY_FUNCTION__);
 
     const T*    attention_input        = input_tensors->getPtr<T>("input_query");
-    Tensor      encoder_output_tensor  = input_tensors->at("encoder_output");
+    const T*    encoder_output         = input_tensors->getPtr<T>("encoder_output");
     const int*  memory_sequence_length = input_tensors->getPtr<int>("encoder_sequence_length");
     const int   step                   = input_tensors->getVal<int>("step");
     const bool* finished               = input_tensors->getPtr<bool>("finished", nullptr);
@@ -908,10 +908,12 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
 
     const int batch_size      = input_tensors->at("input_query").shape[0];
     const int seq_len         = input_tensors->at("input_query").shape[1];
-    const int mem_max_seq_len = encoder_output_tensor.shape[1];
+    const int mem_max_seq_len = input_tensors->at("encoder_output").shape[1];
+    const int mem_d_model     = input_tensors->at("encoder_output").shape[2];
     const int m = batch_size * seq_len;
 
-    allocateBuffer(input_tensors->at("input_query").shape[0], input_tensors->at("encoder_output").shape[1], seq_len);
+    allocateBuffer(batch_size, mem_max_seq_len, seq_len, step);
+    sync_check_cuda_error();
 
     if(step == 0){
         invokeBuildEncoderAttentionMask(
@@ -938,11 +940,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                             CUBLAS_OP_N,
                             hidden_units_,
                             batch_size * mem_max_seq_len,
-                            encoder_output_tensor.shape[2],
+                            mem_d_model,
                             attention_weights->key_weight.kernel,
                             hidden_units_,
-                            encoder_output_tensor.getPtr<T>(),
-                            encoder_output_tensor.shape[2],
+                            encoder_output,
+                            mem_d_model,
                             mem_cache_buf_,
                             hidden_units_);
 
@@ -1008,12 +1010,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                             CUBLAS_OP_N,
                             hidden_units_,
                             batch_size * mem_max_seq_len,
-                            encoder_output_tensor.shape[2],
+                            mem_d_model,
                             attention_weights->value_weight.kernel,
                             hidden_units_,
-                            encoder_output_tensor.getPtr<T>(),
-                            encoder_output_tensor.shape[2],
-                            attention_weights->value_weight.bias,
+                            encoder_output,
+                            mem_d_model,
                             mem_cache_buf_,
                             hidden_units_);
 
@@ -1090,11 +1091,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     CUBLAS_OP_N,
                                     hidden_units_,
                                     batch_size * mem_max_seq_len,
-                                    encoder_output_tensor.shape[2],
+                                    mem_d_model,
                                     attention_weights->key_weight.kernel,
                                     hidden_units_,
-                                    encoder_output_tensor.getPtr<T>(),
-                                    encoder_output_tensor.shape[2],
+                                    encoder_output,
+                                    mem_d_model,
                                     mem_cache_buf_,
                                     hidden_units_);
                 zcode_transpose_4d_batch_major_memory_kernelLauncher<T>(
@@ -1105,11 +1106,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     CUBLAS_OP_N,
                                     hidden_units_,
                                     batch_size * mem_max_seq_len,
-                                    encoder_output_tensor.shape[2],
+                                    mem_d_model,
                                     attention_weights->value_weight.kernel,
                                     hidden_units_,
-                                    encoder_output_tensor.getPtr<T>(),
-                                    encoder_output_tensor.shape[2],
+                                    encoder_output,
+                                    mem_d_model,
                                     mem_cache_buf_,
                                     hidden_units_);
                 zcode_transpose_4d_batch_major_memory_kernelLauncher<T>(value_mem_cache,
@@ -1127,11 +1128,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     CUBLAS_OP_N,
                                     hidden_units_,
                                     batch_size * mem_max_seq_len,
-                                    encoder_output_tensor.shape[2],
+                                    mem_d_model,
                                     attention_weights->key_weight.kernel,
                                     hidden_units_,
-                                    encoder_output_tensor.getPtr<T>(),
-                                    encoder_output_tensor.shape[2],
+                                    encoder_output,
+                                    mem_d_model,
                                     key_mem_cache,
                                     hidden_units_);
 
@@ -1139,11 +1140,11 @@ void ZcodeDecoderCrossAttentionLayer<T>::forward(TensorMap*                outpu
                                     CUBLAS_OP_N,
                                     hidden_units_,
                                     batch_size * mem_max_seq_len,
-                                    encoder_output_tensor.shape[2],
+                                    mem_d_model,
                                     attention_weights->value_weight.kernel,
                                     hidden_units_,
-                                    encoder_output_tensor.getPtr<T>(),
-                                    encoder_output_tensor.shape[2],
+                                    encoder_output,
+                                    mem_d_model,
                                     value_mem_cache,
                                     hidden_units_);
             }

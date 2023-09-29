@@ -131,6 +131,11 @@ FasterTransformerZcodeDecoding::FasterTransformerZcodeDecoding(
     CHECK_INPUT(word_embedding_table, _st);                // vocab_size, hidden_dim
     CHECK_INPUT(word_embedding_layernorm_gamma, _st);      // hidden_dim
     CHECK_INPUT(word_embedding_layernorm_beta, _st);       // hidden_dim
+    CHECK_INPUT(lm_head_dense_kernel, _st);                // hidden_dim, hidden_dim
+    CHECK_INPUT(lm_head_dense_bias, _st);                  // hidden_dim
+    CHECK_INPUT(lm_head_layernorm_gamma, _st);             // hidden_dim
+    CHECK_INPUT(lm_head_layernorm_beta, _st);              // hidden_dim
+    CHECK_INPUT(lm_head_bias, _st);                        // vocab_size
 
     switch (_st) {
         case at::ScalarType::Float:
