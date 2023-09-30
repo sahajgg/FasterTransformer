@@ -63,7 +63,7 @@ private:
     const ActivationType activation_type_;
     const LayerNormType  layernorm_type_;
 
-    void allocateBuffer(size_t batch_size, size_t seq_len);
+    void allocateBuffer(size_t batch_size, size_t seq_len, size_t current_cache_seq_len);
     bool isValidLayerParallelId(uint l);
     bool isFirstLayerParallelId(uint l);
     bool isLastLayerParallelId(uint l);

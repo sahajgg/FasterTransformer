@@ -54,7 +54,6 @@ void ZcodeDecoder<T>::initialize()
                                         size_per_head_,
                                         0,  // expert_num
                                         inter_size_,
-                                        tensor_para_,
                                         stream_,
                                         cublas_wrapper_,
                                         allocator_,
@@ -70,7 +69,6 @@ void ZcodeDecoder<T>::initialize()
                                         size_per_head_,
                                         0,  // expert_num
                                         inter_size_,
-                                        tensor_para_,
                                         stream_,
                                         cublas_wrapper_,
                                         allocator_,
@@ -203,10 +201,10 @@ void ZcodeDecoder<T>::allocateBuffer()
 }
 
 template<typename T>
-void ZcodeDecoder<T>::allocateBuffer(size_t batch_size, size_t seq_len)
+void ZcodeDecoder<T>::allocateBuffer(size_t batch_size, size_t seq_len, size_t current_cache_seq_len)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
-    attention_mask_ = (T*)allocator_->reMalloc(attention_mask_, sizeof(T) * batch_size * seq_len * seq_len, false);
+    attention_mask_ = (T*)allocator_->reMalloc(attention_mask_, sizeof(T) * batch_size * seq_len * (current_cache_seq_len + seq_len), false);
 
     deberta_in_buffer_ =
         (T*)allocator_->reMalloc(deberta_in_buffer_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
@@ -346,10 +344,11 @@ void ZcodeDecoder<T>::forward(
     FT_CHECK(output_tensors->size() == 5);
     const size_t request_batch_size = input_tensors->at("decoder_input").shape[0];
     const size_t request_seq_len    = input_tensors->at("decoder_input").shape[1];
+    const int current_cache_seq_len = input_tensors->at("current_cache_seq_len").getVal<int>();
     const size_t mem_max_seq_len    = input_tensors->at("encoder_output").shape[1];
     
     FT_CHECK(input_tensors->at("decoder_input").shape.size() == 3);
-    allocateBuffer(request_batch_size, request_seq_len);
+    allocateBuffer(request_batch_size, request_seq_len, current_cache_seq_len);
 
     const uint     ite             = input_tensors->at("ite").getVal<uint>();
     const int      step            = input_tensors->at("step").getVal<int>();

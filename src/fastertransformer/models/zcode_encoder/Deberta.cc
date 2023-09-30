@@ -44,7 +44,6 @@ void ZcodeEncoder<T>::initialize()
                                         size_per_head_,
                                         0,  // expert_num
                                         inter_size_,
-                                        tensor_para_,
                                         stream_,
                                         cublas_wrapper_,
                                         allocator_,
@@ -60,7 +59,6 @@ void ZcodeEncoder<T>::initialize()
                                         size_per_head_,
                                         0,  // expert_num
                                         inter_size_,
-                                        tensor_para_,
                                         stream_,
                                         cublas_wrapper_,
                                         allocator_,

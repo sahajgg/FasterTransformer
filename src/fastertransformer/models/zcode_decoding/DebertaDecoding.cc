@@ -625,6 +625,7 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
             // print_to_screen(decoder_output_buf_ + (decoder_seq_len * d_model_), 10);
             // std::cout << std::endl;
         }
+        sync_check_cuda_error();
 
         // Start Decoding Process
         invokeEmbeddingLookupPosEncodingPadCount(
