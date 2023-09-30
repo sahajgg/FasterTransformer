@@ -21,9 +21,9 @@
 #include "src/fastertransformer/kernels/bert_preprocess_kernels.h"
 #include "src/fastertransformer/kernels/gpt_kernels.h"
 #include "src/fastertransformer/kernels/layernorm_kernels.h"
-#include "src/fastertransformer/layers/TensorParallelGeluFfnLayer.h"
-#include "src/fastertransformer/layers/TensorParallelReluFfnLayer.h"
-#include "src/fastertransformer/layers/attention_layers/TensorParallelZcodeEncoderDisentangledAttentionLayer.h"
+#include "src/fastertransformer/layers/FfnLayer.h"
+#include "src/fastertransformer/utils/custom_ar_comm.h"
+#include "src/fastertransformer/layers/attention_layers/ZcodeEncoderDisentangledAttentionLayer.h"
 #include "src/fastertransformer/models/zcode_encoder/DebertaWeight.h"
 #include "src/fastertransformer/utils/nccl_utils.h"
 

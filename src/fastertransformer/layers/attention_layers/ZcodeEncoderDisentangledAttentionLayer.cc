@@ -181,7 +181,7 @@ void ZcodeEncoderDisentangledAttentionLayer<T>::forward(TensorMap*              
         sync_check_cuda_error();
     }
 
-    float scalar = 1 / sqrtf(size_per_head_ * q_scaling_);
+    float scalar = 1 / sqrtf(size_per_head_ * 1.0f * q_scaling_);
 
     // compute Q*K [batch, num_heads, q_seq_len, k_seq_len]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,

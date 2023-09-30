@@ -594,12 +594,6 @@ void DebertaDecoding<T>::forward(TensorMap*                      output_tensors,
                                 stream_);
             sync_check_cuda_error();
 
-            // std::cout << "encoder_output" << std::endl;
-            // print_to_screen(encoder_output_ptr_, 10);
-            // print_to_screen(encoder_output_ptr_ + (input_tensors->at("encoder_output").shape[2]), 10);
-            // print_to_screen(encoder_output_ptr_ + (input_tensors->at("encoder_output").shape[1] * input_tensors->at("encoder_output").shape[2]), 10);
-            // std::cout << std::endl;
-
             step_tmp = 0;
             TensorMap decoder_input_tensors_step0({
                 {"decoder_input", Tensor{MEMORY_GPU, data_type, std::vector<size_t>{batchxbeam, decoder_seq_len, d_model_}, decoder_input_buf_}},

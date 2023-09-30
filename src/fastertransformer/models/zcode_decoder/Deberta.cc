@@ -48,42 +48,36 @@ void ZcodeDecoder<T>::initialize()
 
     bool use_gated_activation = activation_type_ == ActivationType::GeGLU || activation_type_ == ActivationType::ReGLU;
     if (activation_type_ == ActivationType::Gelu) {
-        ffn_layer_ = new TensorParallelGeluFfnLayer<T>(0,
-                                                       0,
-                                                       head_num_,
-                                                       size_per_head_,
-                                                       0,  // expert_num
-                                                       inter_size_,
-                                                       tensor_para_,
-                                                       stream_,
-                                                       cublas_wrapper_,
-                                                       allocator_,
-                                                       true,
-                                                       is_free_buffer_after_forward_,
-                                                       sparse_,
-                                                       0,
-                                                       use_gated_activation,
-                                                       custom_all_reduce_comm_,
-                                                       enable_custom_all_reduce_);
+        ffn_layer_ = new GeluFfnLayer<T>(0,
+                                        0,
+                                        head_num_,
+                                        size_per_head_,
+                                        0,  // expert_num
+                                        inter_size_,
+                                        tensor_para_,
+                                        stream_,
+                                        cublas_wrapper_,
+                                        allocator_,
+                                        is_free_buffer_after_forward_,
+                                        sparse_,
+                                        0,
+                                        use_gated_activation);
     }
     else if (activation_type_ == ActivationType::Relu) {
-        ffn_layer_ = new TensorParallelReluFfnLayer<T>(0,
-                                                       0,
-                                                       head_num_,
-                                                       size_per_head_,
-                                                       0,  // expert_num
-                                                       inter_size_,
-                                                       tensor_para_,
-                                                       stream_,
-                                                       cublas_wrapper_,
-                                                       allocator_,
-                                                       true,
-                                                       is_free_buffer_after_forward_,
-                                                       sparse_,
-                                                       0,
-                                                       use_gated_activation,
-                                                       custom_all_reduce_comm_,
-                                                       enable_custom_all_reduce_);
+        ffn_layer_ = new ReluFfnLayer<T>(0,
+                                        0,
+                                        head_num_,
+                                        size_per_head_,
+                                        0,  // expert_num
+                                        inter_size_,
+                                        tensor_para_,
+                                        stream_,
+                                        cublas_wrapper_,
+                                        allocator_,
+                                        is_free_buffer_after_forward_,
+                                        sparse_,
+                                        0,
+                                        use_gated_activation);
     }
 }
 
@@ -482,11 +476,6 @@ void ZcodeDecoder<T>::forward(
                                                         stream_);
         }
         sync_check_cuda_error();
-
-        // std::cout << "attn_out_buf_" << std::endl;
-        // print_to_screen(attn_out_buf_, 10);
-        // print_to_screen(attn_out_buf_ + (request_seq_len * hidden_units_), 10);
-        // std::cout << std::endl;
 
         // Cross Attention
         {

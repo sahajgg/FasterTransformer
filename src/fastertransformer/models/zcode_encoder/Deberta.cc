@@ -23,60 +23,51 @@ template<typename T>
 void ZcodeEncoder<T>::initialize()
 {
     disentangled_attention_layer_ =
-        new TensorParallelZcodeEncoderDisentangledAttentionLayer<T>(0,
+        new ZcodeEncoderDisentangledAttentionLayer<T>(0,
                                                         0,
-                                                        head_num_ / tensor_para_.world_size_,
+                                                        head_num_,
                                                         size_per_head_,
                                                         relative_position_buckets_,
                                                         head_num_ * size_per_head_,
                                                         q_scaling_,
-                                                        tensor_para_,
                                                         stream_,
                                                         cublas_wrapper_,
                                                         allocator_,
                                                         is_free_buffer_after_forward_,
-                                                        sparse_,
-                                                        custom_all_reduce_comm_,
-                                                        enable_custom_all_reduce_);
+                                                        sparse_);
 
     bool use_gated_activation = activation_type_ == ActivationType::GeGLU || activation_type_ == ActivationType::ReGLU;
     if (activation_type_ == ActivationType::Gelu) {
-        ffn_layer_ = new TensorParallelGeluFfnLayer<T>(0,
-                                                       0,
-                                                       head_num_,
-                                                       size_per_head_,
-                                                       0,  // expert_num
-                                                       inter_size_,
-                                                       tensor_para_,
-                                                       stream_,
-                                                       cublas_wrapper_,
-                                                       allocator_,
-                                                       true,
-                                                       is_free_buffer_after_forward_,
-                                                       sparse_,
-                                                       0,
-                                                       use_gated_activation,
-                                                       custom_all_reduce_comm_,
-                                                       enable_custom_all_reduce_);
+        ffn_layer_ = new GeluFfnLayer<T>(0,
+                                        0,
+                                        head_num_,
+                                        size_per_head_,
+                                        0,  // expert_num
+                                        inter_size_,
+                                        tensor_para_,
+                                        stream_,
+                                        cublas_wrapper_,
+                                        allocator_,
+                                        is_free_buffer_after_forward_,
+                                        sparse_,
+                                        0,
+                                        use_gated_activation);
     }
     else if (activation_type_ == ActivationType::Relu) {
-        ffn_layer_ = new TensorParallelReluFfnLayer<T>(0,
-                                                       0,
-                                                       head_num_,
-                                                       size_per_head_,
-                                                       0,  // expert_num
-                                                       inter_size_,
-                                                       tensor_para_,
-                                                       stream_,
-                                                       cublas_wrapper_,
-                                                       allocator_,
-                                                       true,
-                                                       is_free_buffer_after_forward_,
-                                                       sparse_,
-                                                       0,
-                                                       use_gated_activation,
-                                                       custom_all_reduce_comm_,
-                                                       enable_custom_all_reduce_);
+        ffn_layer_ = new ReluFfnLayer<T>(0,
+                                        0,
+                                        head_num_,
+                                        size_per_head_,
+                                        0,  // expert_num
+                                        inter_size_,
+                                        tensor_para_,
+                                        stream_,
+                                        cublas_wrapper_,
+                                        allocator_,
+                                        is_free_buffer_after_forward_,
+                                        sparse_,
+                                        0,
+                                        use_gated_activation);
     }
 }
 
