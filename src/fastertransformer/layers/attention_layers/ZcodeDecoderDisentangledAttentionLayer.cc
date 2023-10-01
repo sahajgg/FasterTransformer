@@ -215,7 +215,7 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
     // w/ real attentions)
 
     // Cached Qr, Kr [batch * num_heads, 2*attention_span, head_size]
-    // compute content-to-position "c2p" attention,  Qc*Kr^T [batch, num_heads, seq_len, 2*attention_span]
+    // compute content-to-position "c2p" attention,  Qc*Kr^T [batch, num_heads, q_seq_len, 2*attention_span]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
                                         CUBLAS_OP_N,
                                         2 * s,
@@ -234,21 +234,21 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::forward(TensorMap*              
                                         scalar /* alpha */);
     sync_check_cuda_error();
 
-    // compute position-to-content "p2c" attention,  Kc*Qr^T [batch, num_heads, seq_len, 2*attention_span]
+    // compute position-to-content "p2c" attention,  Kc*Qr^T [batch, num_heads, k_seq_len, 2*attention_span]
     cublas_wrapper_->stridedBatchedGemm(CUBLAS_OP_T,
                                         CUBLAS_OP_N,
                                         2 * s,
-                                        request_seq_len,
+                                        new_cache_seq_len,
                                         size_per_head_,
                                         input_tensors->getPtr<T>("pos_query_cache"),
                                         size_per_head_,
                                         2 * s * size_per_head_,
-                                        k_buf_2_,
+                                        key_cache,
                                         size_per_head_,
-                                        request_seq_len * size_per_head_,
+                                        new_cache_seq_len * size_per_head_,
                                         KcQr_buf_,
                                         2 * s,
-                                        request_seq_len * 2 * s,
+                                        new_cache_seq_len * 2 * s,
                                         request_batch_size * head_num_, /* batch size */
                                         scalar /* alpha */);
     sync_check_cuda_error();
@@ -449,19 +449,19 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::allocateBuffer(size_t batch_size
     q_buf_2_ = (T*)allocator_->reMalloc(q_buf_2_, sizeof(T) * 3 * batch_size * seq_len * hidden_units_, false);
     k_buf_2_ = q_buf_2_ + batch_size * seq_len * hidden_units_;
     v_buf_2_ = k_buf_2_ + batch_size * seq_len * hidden_units_;
-    qk_buf_  = (T*)allocator_->reMalloc(qk_buf_, sizeof(T) * batch_size * head_num_ * new_cache_seq_len * new_cache_seq_len, false);
+    qk_buf_  = (T*)allocator_->reMalloc(qk_buf_, sizeof(T) * batch_size * head_num_ * seq_len * new_cache_seq_len, false);
     QcKr_buf_    = (T*)allocator_->reMalloc(
-        QcKr_buf_, sizeof(T) * 2 * batch_size * head_num_ * new_cache_seq_len * 2 * attention_span_, false);
-    KcQr_buf_  = QcKr_buf_ + batch_size * head_num_ * new_cache_seq_len * 2 * attention_span_;
+        QcKr_buf_, sizeof(T) * batch_size * head_num_ * seq_len * 2 * attention_span_, false);
+    
+    KcQr_buf_  = (T*)allocator_->reMalloc(
+        KcQr_buf_, sizeof(T) * batch_size * head_num_ * new_cache_seq_len * 2 * attention_span_, false);
+    
     qkv_buf_   = (T*)allocator_->reMalloc(qkv_buf_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
     qkv_buf_2_ = (T*)allocator_->reMalloc(qkv_buf_2_, sizeof(T) * batch_size * seq_len * hidden_units_, false);
     batch_qkv_kernel_ptr_    = (T**)allocator_->reMalloc(batch_qkv_kernel_ptr_, sizeof(T*) * 12, false);
     batch_qkv_input_ptr_     = batch_qkv_kernel_ptr_ + 4;
     batch_qkv_buf_ptr_       = batch_qkv_input_ptr_ + 4;
 
-    cudaMemsetAsync(qk_buf_, (T)(0.0f), sizeof(T) * batch_size * head_num_ * new_cache_seq_len * new_cache_seq_len, stream_);
-    cudaMemsetAsync(QcKr_buf_, (T)(0.0f), sizeof(T) * 2 * batch_size * head_num_ * new_cache_seq_len * 2 * attention_span_, stream_);
-    
     is_allocate_buffer_ = true;
 }
 
@@ -476,6 +476,7 @@ void ZcodeDecoderDisentangledAttentionLayer<T>::freeBuffer()
         allocator_->free((void**)(&q_buf_2_));
         allocator_->free((void**)(&qk_buf_));
         allocator_->free((void**)(&QcKr_buf_));
+        allocator_->free((void**)(&KcQr_buf_));
         allocator_->free((void**)(&qkv_buf_));
         allocator_->free((void**)(&qkv_buf_2_));
         allocator_->free((void**)(&batch_qkv_kernel_ptr_));
