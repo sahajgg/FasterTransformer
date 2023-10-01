@@ -244,7 +244,7 @@ void ZcodeEncoderDisentangledAttentionLayer<T>::forward(TensorMap*              
 
     // gather & add c2c+c2p+p2c. In-place operation
     invokeDisentangledAttention(
-        qk_buf_, qk_buf_, QcKr_buf_, KcQr_buf_, request_batch_size * head_num_, request_seq_len, s, stream_);
+        qk_buf_, qk_buf_, QcKr_buf_, KcQr_buf_, request_batch_size * head_num_, request_seq_len, request_seq_len, s, stream_);
     sync_check_cuda_error();
 
     // softmax(QK)

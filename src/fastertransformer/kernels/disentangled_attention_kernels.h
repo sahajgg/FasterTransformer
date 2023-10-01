@@ -34,6 +34,6 @@ void invokeAddQKBiasTransposeRepeat(T*           q_buf,
 
 template<typename T>
 void invokeDisentangledAttention(
-    T* result, T* c2c, T* c2p, T* p2c, const int batch_dim, const int seq_dim, const int span, cudaStream_t stream);
+    T* result, T* c2c, T* c2p, T* p2c, const int batch_dim, const int q_seq_dim, const int k_seq_dim, const int span, cudaStream_t stream);
 
 }  // namespace fastertransformer

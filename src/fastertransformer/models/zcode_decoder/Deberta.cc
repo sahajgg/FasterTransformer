@@ -40,7 +40,7 @@ void ZcodeDecoder<T>::initialize()
                                                         head_num_,
                                                         size_per_head_,
                                                         head_num_ * size_per_head_,
-                                                        sqrtf(q_scaling_),
+                                                        1.0f,
                                                         stream_,
                                                         cublas_wrapper_,
                                                         allocator_,

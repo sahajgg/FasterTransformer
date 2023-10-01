@@ -235,7 +235,8 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
                                               TDataType const* data1,
                                               TDataType const* data2,
                                               int32_t          batch_dim,
-                                              int32_t          seq_dim,
+                                              int32_t          q_seq_dim,
+                                              int32_t          k_seq_dim,
                                               int32_t          span)
 {
     // Tile size should be a multiple of number of block rows
@@ -282,7 +283,7 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
 
 // gather data2
 #pragma unroll
-    for (c = 0, ty = 0; c < tTileSize / tBlockDimY && (j + ty) < seq_dim && k < seq_dim; c++, ty += tBlockDimY) {
+    for (c = 0, ty = 0; c < tTileSize / tBlockDimY && (j + ty) < k_seq_dim && k < q_seq_dim; c++, ty += tBlockDimY) {
 #if kDISENTANGLED_VERSION == 1
         // relative position -- version 1
         if (k - (j + ty) >= span) {
@@ -310,7 +311,7 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
         // boundary
         index                            = bucket + span;
         index                            = min(max(0, index), pos_dim - 1);
-        res2                             = data2[i * seq_dim * pos_dim + (j + ty) * pos_dim + index];
+        res2                             = data2[i * k_seq_dim * pos_dim + (j + ty) * pos_dim + index];
         T[ty + threadIdx.y][threadIdx.x] = res2;
 #endif
     }
@@ -323,7 +324,7 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
 
 // read data0 + gather data1 + add all + write
 #pragma unroll
-    for (c = 0, ty = 0; c < tTileSize / tBlockDimY && (j + ty) < seq_dim && k < seq_dim; c++, ty += tBlockDimY) {
+    for (c = 0, ty = 0; c < tTileSize / tBlockDimY && (j + ty) < q_seq_dim && k < k_seq_dim; c++, ty += tBlockDimY) {
 #if kDISENTANGLED_VERSION == 1
         // relative position -- version 1
         // for non-transposed matrix 1, just fetch element at the transposed location & add to the result)
@@ -351,11 +352,11 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
         // boundary
         index = bucket + span;
         index = min(max(0, index), pos_dim - 1);
-        res1  = data1[i * seq_dim * pos_dim + (j + ty) * pos_dim + index];
+        res1  = data1[i * q_seq_dim * pos_dim + (j + ty) * pos_dim + index];
 #endif
 
         // for non-tranposed matrix 0, same as matrix 1
-        res0 = data0[i * seq_dim * seq_dim + (j + ty) * seq_dim + k];
+        res0 = data0[i * q_seq_dim * k_seq_dim + (j + ty) * k_seq_dim + k];
 
         // (res0 + res1 + res2)
 #if __cplusplus >= 201703L
@@ -391,15 +392,15 @@ __global__ void disentangled_attention_kernel(TDataType*       result,
         compute_attention<TDataType>(res, res0, res1, T[threadIdx.x][ty + threadIdx.y]);
 #endif
         // write
-        result[i * seq_dim * seq_dim + (j + ty) * seq_dim + k] = res;
+        result[i * q_seq_dim * k_seq_dim + (j + ty) * k_seq_dim + k] = res;
     }
 }
 
 #define INSTANTIATEDISENTANGLEDKERNEL(T)                                                                               \
     template __global__ void disentangled_attention_kernel<T, kDISENTANGLED_TILESIZE_V1, kDISENTANGLED_BLOCKDIMY_V1>(  \
-        T*, T*, T const*, T const*, int32_t, int32_t, int32_t);                                                        \
+        T*, T*, T const*, T const*, int32_t, int32_t, int32_t, int32_t);                                                        \
     template __global__ void disentangled_attention_kernel<T, kDISENTANGLED_TILESIZE_V2, kDISENTANGLED_BLOCKDIMY_V2>(  \
-        T*, T*, T const*, T const*, int32_t, int32_t, int32_t);
+        T*, T*, T const*, T const*, int32_t, int32_t, int32_t, int32_t);
 INSTANTIATEDISENTANGLEDKERNEL(float)
 INSTANTIATEDISENTANGLEDKERNEL(half)
 INSTANTIATEDISENTANGLEDKERNEL(int8_t)
@@ -410,7 +411,7 @@ INSTANTIATEDISENTANGLEDKERNEL(__nv_bfloat16)
 
 template<typename T>
 void invokeDisentangledAttention(
-    T* result, T* c2c, T* c2p, T* p2c, const int batch_dim, const int seq_dim, const int span, cudaStream_t stream)
+    T* result, T* c2c, T* c2p, T* p2c, const int batch_dim, const int q_seq_dim, const int k_seq_dim, const int span, cudaStream_t stream)
 {
 #if kDISENTANGLED_VERSION == 1
     dim3 block_optimized(kDISENTANGLED_TILESIZE_V1, kDISENTANGLED_BLOCKDIMY_V1);
@@ -422,9 +423,9 @@ void invokeDisentangledAttention(
 #elif kDISENTANGLED_VERSION == 2
     dim3 block_optimized(kDISENTANGLED_TILESIZE_V2, kDISENTANGLED_BLOCKDIMY_V2);
     dim3 grid_optimized(
-        (seq_dim - 1) / kDISENTANGLED_TILESIZE_V2 + 1, (seq_dim - 1) / kDISENTANGLED_TILESIZE_V2 + 1, batch_dim);
+        (k_seq_dim - 1) / kDISENTANGLED_TILESIZE_V2 + 1, (q_seq_dim - 1) / kDISENTANGLED_TILESIZE_V2 + 1, batch_dim);
     disentangled_attention_kernel<T, kDISENTANGLED_TILESIZE_V2, kDISENTANGLED_BLOCKDIMY_V2>
-        <<<grid_optimized, block_optimized, 0, stream>>>(result, c2c, c2p, p2c, batch_dim, seq_dim, span);
+        <<<grid_optimized, block_optimized, 0, stream>>>(result, c2c, c2p, p2c, batch_dim, q_seq_dim, k_seq_dim, span);
 
 #endif
 }
@@ -435,7 +436,8 @@ void invokeDisentangledAttention(
                                               T*           c2p,                                                        \
                                               T*           p2c,                                                        \
                                               const int    batch_dim,                                                  \
-                                              const int    seq_dim,                                                    \
+                                              const int    q_seq_dim,                                                  \
+                                              const int    k_seq_dim,                                                  \
                                               const int    span,                                                       \
                                               cudaStream_t stream);
 INSTANTIATEDISENTANGLEDATTENTION(float)
