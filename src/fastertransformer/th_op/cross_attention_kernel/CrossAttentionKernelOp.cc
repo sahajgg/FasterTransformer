@@ -25,6 +25,7 @@ FasterTransformerCrossAttentionKernel::FasterTransformerCrossAttentionKernel(
                                 th::Tensor           cross_k_bias,
                                 th::Tensor           cross_v_bias,
                                 th::Tensor           cross_attn_output_kernel,
+                                th::Tensor           cross_attn_output_bias,
                                 th::Tensor           cross_attn_layernorm_gamma,
                                 th::Tensor           cross_attn_layernorm_beta,
                                 int64_t              head_num,
@@ -37,6 +38,7 @@ FasterTransformerCrossAttentionKernel::FasterTransformerCrossAttentionKernel(
             cross_k_bias,
             cross_v_bias,
             cross_attn_output_kernel,
+            cross_attn_output_bias,
             cross_attn_layernorm_gamma,
             cross_attn_layernorm_beta}
 {
@@ -87,6 +89,7 @@ static auto FasterTransformerCrossAttentionKernelTHS =
     torch::jit::class_<torch_ext::FasterTransformerCrossAttentionKernel>("FasterTransformer", "CrossAttentionKernel")
 #endif
         .def(torch::jit::init<th::Tensor,
+                              th::Tensor,
                               th::Tensor,
                               th::Tensor,
                               th::Tensor,

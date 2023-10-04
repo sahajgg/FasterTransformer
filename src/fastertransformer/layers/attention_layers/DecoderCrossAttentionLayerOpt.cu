@@ -736,12 +736,6 @@ template<typename T>
 void DecoderCrossAttentionLayerOpt<T>::allocateBuffer()
 {
     FT_CHECK(false);
-    if (is_allocate_buffer_ == false) {
-        q_buf_ = reinterpret_cast<T*>(allocator_->reMalloc(q_buf_, sizeof(T) * max_batch_size_ * hidden_units_, false));
-        context_buf_ = reinterpret_cast<T*>(
-            allocator_->reMalloc(context_buf_, sizeof(T) * max_batch_size_ * hidden_units_, false));
-        is_allocate_buffer_ = true;
-    }
 }
 
 template<typename T>
@@ -751,6 +745,10 @@ void DecoderCrossAttentionLayerOpt<T>::allocateBuffer(size_t batch_size, size_t 
     q_buf_ = reinterpret_cast<T*>(allocator_->reMalloc(q_buf_, sizeof(T) * batch_size * hidden_units_, false));
     context_buf_ =
         reinterpret_cast<T*>(allocator_->reMalloc(context_buf_, sizeof(T) * batch_size * hidden_units_, false));
+    key_mem_cache = reinterpret_cast<T*>(
+            allocator_->reMalloc(key_mem_cache, sizeof(T) * batch_size * max_mem_seq_len * hidden_units_, false));
+    value_mem_cache = reinterpret_cast<T*>(
+            allocator_->reMalloc(value_mem_cache, sizeof(T) * batch_size * max_mem_seq_len * hidden_units_, false));
 
     is_allocate_buffer_ = true;
 }
@@ -761,6 +759,8 @@ void DecoderCrossAttentionLayerOpt<T>::freeBuffer()
     if (is_allocate_buffer_) {
         allocator_->free((void**)(&q_buf_));
         allocator_->free((void**)(&context_buf_));
+        allocator_->free((void**)(&key_mem_cache));
+        allocator_->free((void**)(&value_mem_cache));
         is_allocate_buffer_ = false;
     }
 }
@@ -879,8 +879,6 @@ void DecoderCrossAttentionLayerOpt<T>::forward(TensorMap*                output_
     
 
     const T*    attention_input        = input_tensors->getPtr<T>("input_query");
-    T*          key_mem_cache          = input_tensors->getPtr<T>("key_cache");
-    T*          value_mem_cache        = input_tensors->getPtr<T>("value_cache");
     const int*  memory_sequence_length = input_tensors->getPtr<int>("encoder_sequence_length");
     const int   step                   = input_tensors->getVal<int>("step");
     const bool* finished               = input_tensors->getPtr<bool>("finished", nullptr);
@@ -888,7 +886,11 @@ void DecoderCrossAttentionLayerOpt<T>::forward(TensorMap*                output_
     const int   max_mem_seq_len        = input_tensors->at("key_cache").shape[2];
     allocateBuffer(batch_size, max_mem_seq_len);
 
-    T* attention_out   = output_tensors->getPtr<T>("hidden_features");
+    T* attention_out   = output_tensors->getPtr<T>("attention_output");
+
+    transpose_4d_batch_major_memory_kernelLauncher<T>(key_mem_cache, input_tensors->getPtr<T>("key_cache"), batch_size, max_mem_seq_len, size_per_head_, head_num_, true, stream_);
+    transpose_4d_batch_major_memory_kernelLauncher<T>(value_mem_cache, input_tensors->getPtr<T>("value_cache"), batch_size, max_mem_seq_len, size_per_head_, head_num_, false, stream_);
+    sync_check_cuda_error();
     
     cublas_wrapper_->Gemm(CUBLAS_OP_N,
                           CUBLAS_OP_N,

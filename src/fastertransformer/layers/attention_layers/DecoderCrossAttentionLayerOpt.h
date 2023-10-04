@@ -52,7 +52,8 @@ protected:
 
     T* q_buf_         = nullptr;
     T* context_buf_   = nullptr;
-    T* mem_cache_buf_ = nullptr;
+    T* key_mem_cache = nullptr;
+    T* value_mem_cache = nullptr;
 
 public:
     DecoderCrossAttentionLayerOpt(size_t           max_batch_size,

@@ -112,7 +112,7 @@ public:
             {"finished", ft::Tensor{ft::MEMORY_GPU, ft::TYPE_BOOL, std::vector<size_t>{batch_size}, get_ptr<int>(finished)}}
         });
 
-        auto attention_output = torch::empty({(batch_size * d_model)}, torch::dtype(torch::kFloat16).device(torch::kCUDA).requires_grad(false));
+        auto attention_output = torch::empty({batch_size, 1, d_model}, torch::dtype(torch::kFloat16).device(torch::kCUDA).requires_grad(false));
         ft::TensorMap output_tensors(
             {{"attention_output", ft::Tensor{ft::MEMORY_GPU, data_type, std::vector<size_t>{batch_size, d_model}, get_ptr<T>(attention_output)}}}
         );
@@ -128,6 +128,9 @@ public:
             std::cout << "Runtime error";
             exit(-1);
         }
+        delete crossattentionkernel;
+        delete cublas_wrapper;
+        delete allocator;
         return attention_output;
     }
 
@@ -154,6 +157,7 @@ public:
                                 th::Tensor           cross_k_bias,
                                 th::Tensor           cross_v_bias,
                                 th::Tensor           cross_attn_output_kernel,
+                                th::Tensor           cross_attn_output_bias,
                                 th::Tensor           cross_attn_layernorm_gamma,
                                 th::Tensor           cross_attn_layernorm_beta,
                                 int64_t              head_num,
