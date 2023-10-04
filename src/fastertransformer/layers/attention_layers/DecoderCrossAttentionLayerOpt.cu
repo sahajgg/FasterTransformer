@@ -25,7 +25,7 @@
 #include "src/fastertransformer/kernels/decoder_masked_multihead_attention.h"
 #include "src/fastertransformer/kernels/decoder_masked_multihead_attention_utils.h"
 #include "src/fastertransformer/kernels/reduce_kernel_utils.cuh"
-#include "src/fastertransformer/layers/attention_layers/DecoderCrossAttentionLayer.h"
+#include "src/fastertransformer/layers/attention_layers/DecoderCrossAttentionLayerOpt.h"
 #include "src/fastertransformer/utils/cuda_type_utils.cuh"
 
 namespace fastertransformer {
@@ -733,52 +733,40 @@ template void transpose_4d_batch_major_memory_kernelLauncher(__nv_bfloat16*     
 #endif
 
 template<typename T>
-void DecoderCrossAttentionLayer<T>::allocateBuffer()
+void DecoderCrossAttentionLayerOpt<T>::allocateBuffer()
 {
     FT_CHECK(false);
     if (is_allocate_buffer_ == false) {
         q_buf_ = reinterpret_cast<T*>(allocator_->reMalloc(q_buf_, sizeof(T) * max_batch_size_ * hidden_units_, false));
         context_buf_ = reinterpret_cast<T*>(
             allocator_->reMalloc(context_buf_, sizeof(T) * max_batch_size_ * hidden_units_, false));
-
-        if (is_batch_major_cache_) {
-            mem_cache_buf_ = reinterpret_cast<T*>(allocator_->reMalloc(
-                mem_cache_buf_, sizeof(T) * max_batch_size_ * max_mem_seq_len_ * hidden_units_, false));
-        }
         is_allocate_buffer_ = true;
     }
 }
 
 template<typename T>
-void DecoderCrossAttentionLayer<T>::allocateBuffer(size_t batch_size, size_t max_mem_seq_len)
+void DecoderCrossAttentionLayerOpt<T>::allocateBuffer(size_t batch_size, size_t max_mem_seq_len)
 {
     FT_LOG_DEBUG(__PRETTY_FUNCTION__);
     q_buf_ = reinterpret_cast<T*>(allocator_->reMalloc(q_buf_, sizeof(T) * batch_size * hidden_units_, false));
     context_buf_ =
         reinterpret_cast<T*>(allocator_->reMalloc(context_buf_, sizeof(T) * batch_size * hidden_units_, false));
 
-    if (is_batch_major_cache_) {
-        mem_cache_buf_ = reinterpret_cast<T*>(
-            allocator_->reMalloc(mem_cache_buf_, sizeof(T) * batch_size * max_mem_seq_len * hidden_units_, false));
-    }
     is_allocate_buffer_ = true;
 }
 
 template<typename T>
-void DecoderCrossAttentionLayer<T>::freeBuffer()
+void DecoderCrossAttentionLayerOpt<T>::freeBuffer()
 {
     if (is_allocate_buffer_) {
         allocator_->free((void**)(&q_buf_));
         allocator_->free((void**)(&context_buf_));
-        if (is_batch_major_cache_) {
-            allocator_->free((void**)(&mem_cache_buf_));
-        }
         is_allocate_buffer_ = false;
     }
 }
 
 template<typename T>
-DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_batch_size,
+DecoderCrossAttentionLayerOpt<T>::DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                                           size_t           head_num,
                                                           size_t           size_per_head,
                                                           size_t           d_model,
@@ -801,14 +789,14 @@ DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_b
 }
 
 template<typename T>
-DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_batch_size,
+DecoderCrossAttentionLayerOpt<T>::DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                                           size_t           head_num,
                                                           size_t           size_per_head,
                                                           cudaStream_t     stream,
                                                           cublasMMWrapper* cublas_wrapper,
                                                           IAllocator*      allocator,
                                                           bool             is_free_buffer_after_forward):
-    DecoderCrossAttentionLayer<T>(max_batch_size,
+    DecoderCrossAttentionLayerOpt<T>(max_batch_size,
                                   head_num,
                                   size_per_head,
                                   head_num * size_per_head,
@@ -821,7 +809,7 @@ DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_b
 }
 
 template<typename T>
-DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_batch_size,
+DecoderCrossAttentionLayerOpt<T>::DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                                           size_t           head_num,
                                                           size_t           size_per_head,
                                                           const float      q_scaling,
@@ -829,7 +817,7 @@ DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_b
                                                           cublasMMWrapper* cublas_wrapper,
                                                           IAllocator*      allocator,
                                                           bool             is_free_buffer_after_forward):
-    DecoderCrossAttentionLayer<T>(max_batch_size,
+    DecoderCrossAttentionLayerOpt<T>(max_batch_size,
                                   head_num,
                                   size_per_head,
                                   head_num * size_per_head,
@@ -842,8 +830,8 @@ DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(size_t           max_b
 }
 
 template<typename T>
-DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(DecoderCrossAttentionLayer<T> const& attention_layer):
-    DecoderCrossAttentionLayer(attention_layer.max_batch_size_,
+DecoderCrossAttentionLayerOpt<T>::DecoderCrossAttentionLayerOpt(DecoderCrossAttentionLayerOpt<T> const& attention_layer):
+    DecoderCrossAttentionLayerOpt(attention_layer.max_batch_size_,
                                attention_layer.head_num_,
                                attention_layer.size_per_head_,
                                attention_layer.d_model_,
@@ -856,49 +844,52 @@ DecoderCrossAttentionLayer<T>::DecoderCrossAttentionLayer(DecoderCrossAttentionL
 }
 
 template<typename T>
-DecoderCrossAttentionLayer<T>::~DecoderCrossAttentionLayer()
+DecoderCrossAttentionLayerOpt<T>::~DecoderCrossAttentionLayerOpt()
 {
     cublas_wrapper_ = nullptr;
     freeBuffer();
 }
 
 template<typename T>
-void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_tensors,
+void DecoderCrossAttentionLayerOpt<T>::forward(TensorMap*                output_tensors,
                                             TensorMap*                input_tensors,
                                             const AttentionWeight<T>* attention_weights)
 {
+    FT_CHECK(false);
+}
+
+template<typename T>
+void DecoderCrossAttentionLayerOpt<T>::forward(TensorMap*                output_tensors,
+                                            TensorMap*                input_tensors,
+                                            const AttentionWeight<T>* attention_weights, 
+                                            const LayerNormWeight<T>* layernorm_weights)
+{
     // input tensors:
     //      attention_input [batch_size, d_model],
-    //      encoder_output [batch_size, mem_max_seq_len, memory_d_model],
+    //      key_mem_cache [batch_size, head_num, size_per_head // x, mem_max_seq_len, x], where x = 16 / sizeof(T),
+    //      value_mem_cache [batch_size, head_num, mem_max_seq_len, size_per_head],
     //      encoder_sequence_length [batch_size],
-    //      step [1] on cpu
+    //      step [1] on cpu,
     //      finished [batch_size] (optional)
-    //      ia3_tasks [batch_size] (optional)
 
     // output tensors:
-    //      decoder_layer_output [batch_size, d_model],
-    //      key_mem_cache [batch_size, head_num, size_per_head // x, mem_max_seq_len, x], where x = 16 / sizeof(T)
-    //      value_mem_cache [batch_size, head_num, mem_max_seq_len, size_per_head]
-    //      cross_attentions [batch_size, head_num, max_decoder_seq_len, mem_max_seq_len] optional float*
+    //      attention_output [batch_size, d_model]
+
     FT_LOG_DEBUG("%s", __PRETTY_FUNCTION__);
-    allocateBuffer(input_tensors->at("input_query").shape[0], input_tensors->at("encoder_output").shape[1]);
+    
 
     const T*    attention_input        = input_tensors->getPtr<T>("input_query");
-    Tensor      encoder_output_tensor  = input_tensors->at("encoder_output");
+    T*          key_mem_cache          = input_tensors->getPtr<T>("key_cache");
+    T*          value_mem_cache        = input_tensors->getPtr<T>("value_cache");
     const int*  memory_sequence_length = input_tensors->getPtr<int>("encoder_sequence_length");
     const int   step                   = input_tensors->getVal<int>("step");
     const bool* finished               = input_tensors->getPtr<bool>("finished", nullptr);
-    const bool  has_ia3                = input_tensors->isExist("ia3_tasks");
+    const int   batch_size             = input_tensors->at("key_cache").shape[0];
+    const int   max_mem_seq_len        = input_tensors->at("key_cache").shape[2];
+    allocateBuffer(batch_size, max_mem_seq_len);
 
     T* attention_out   = output_tensors->getPtr<T>("hidden_features");
-    T* key_mem_cache   = output_tensors->getPtr<T>("key_cache");
-    T* value_mem_cache = output_tensors->getPtr<T>("value_cache");
-
-    const bool output_cross_attentions = output_tensors->isExist("cross_attentions");
-    const int  max_decoder_seq_len     = output_cross_attentions ? output_tensors->at("cross_attentions").shape[2] : 0;
-
-    const int batch_size      = input_tensors->at("input_query").shape[0];
-    const int mem_max_seq_len = encoder_output_tensor.shape[1];
+    
     cublas_wrapper_->Gemm(CUBLAS_OP_N,
                           CUBLAS_OP_N,
                           hidden_units_,  // n
@@ -911,80 +902,7 @@ void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_ten
                           q_buf_,
                           hidden_units_ /* n */);
 
-    if (step == 1) {
-        if (is_batch_major_cache_) {
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  batch_size * mem_max_seq_len,
-                                  encoder_output_tensor.shape[2],
-                                  attention_weights->key_weight.kernel,
-                                  hidden_units_,
-                                  encoder_output_tensor.getPtr<T>(),
-                                  encoder_output_tensor.shape[2],
-                                  mem_cache_buf_,
-                                  hidden_units_);
-            transpose_4d_batch_major_memory_kernelLauncher<T>(
-                key_mem_cache, mem_cache_buf_, batch_size, mem_max_seq_len, size_per_head_, head_num_, true, stream_);
-            sync_check_cuda_error();
-
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  batch_size * mem_max_seq_len,
-                                  encoder_output_tensor.shape[2],
-                                  attention_weights->value_weight.kernel,
-                                  hidden_units_,
-                                  encoder_output_tensor.getPtr<T>(),
-                                  encoder_output_tensor.shape[2],
-                                  mem_cache_buf_,
-                                  hidden_units_);
-            transpose_4d_batch_major_memory_kernelLauncher<T>(value_mem_cache,
-                                                              mem_cache_buf_,
-                                                              batch_size,
-                                                              mem_max_seq_len,
-                                                              size_per_head_,
-                                                              head_num_,
-                                                              false,
-                                                              stream_);
-            sync_check_cuda_error();
-        }
-        else {
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  batch_size * mem_max_seq_len,
-                                  encoder_output_tensor.shape[2],
-                                  attention_weights->key_weight.kernel,
-                                  hidden_units_,
-                                  encoder_output_tensor.getPtr<T>(),
-                                  encoder_output_tensor.shape[2],
-                                  key_mem_cache,
-                                  hidden_units_);
-
-            cublas_wrapper_->Gemm(CUBLAS_OP_N,
-                                  CUBLAS_OP_N,
-                                  hidden_units_,
-                                  batch_size * mem_max_seq_len,
-                                  encoder_output_tensor.shape[2],
-                                  attention_weights->value_weight.kernel,
-                                  hidden_units_,
-                                  encoder_output_tensor.getPtr<T>(),
-                                  encoder_output_tensor.shape[2],
-                                  value_mem_cache,
-                                  hidden_units_);
-        }
-    }
-    sync_check_cuda_error();
-
     outputCrossAttentionParam<float> output_attention_param{};
-    // output cross attentions
-    if (output_cross_attentions) {
-        output_attention_param.max_decoder_seq_len        = max_decoder_seq_len;
-        output_attention_param.cross_attention_out        = output_tensors->at("cross_attentions").getPtr<float>();
-        output_attention_param.is_return_cross_attentions = true;
-    }
-
     cross_attention_dispatch<T>(q_buf_,
                                 attention_weights->query_weight.bias,
                                 key_mem_cache,
@@ -999,13 +917,13 @@ void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_ten
                                 head_num_,
                                 size_per_head_,
                                 step,
-                                mem_max_seq_len,
+                                max_mem_seq_len,
                                 is_batch_major_cache_,
                                 q_scaling_,
                                 output_attention_param,
-                                has_ia3 ? input_tensors->at("ia3_tasks").getPtr<const int>() : nullptr,
-                                has_ia3 ? attention_weights->ia3_key_weight.kernel : nullptr,
-                                has_ia3 ? attention_weights->ia3_value_weight.kernel : nullptr,
+                                nullptr,
+                                nullptr,
+                                nullptr,
                                 stream_);
     sync_check_cuda_error();
     cublas_wrapper_->Gemm(CUBLAS_OP_N,
@@ -1019,15 +937,26 @@ void DecoderCrossAttentionLayer<T>::forward(TensorMap*                output_ten
                           hidden_units_,  // k
                           attention_out,
                           d_model_ /* n */);
+
+    invokeAddBiasResidualLayerNorm(attention_out,
+                                attention_input,
+                                attention_weights->attention_output_weight.bias,
+                                layernorm_weights->gamma,
+                                layernorm_weights->beta,
+                                1e-7f,
+                                batch_size,
+                                hidden_units_,
+                                stream_);
+                                        
     if (is_free_buffer_after_forward_ == true) {
         freeBuffer();
     }
 }
 
-template class DecoderCrossAttentionLayer<float>;
-template class DecoderCrossAttentionLayer<half>;
+template class DecoderCrossAttentionLayerOpt<float>;
+template class DecoderCrossAttentionLayerOpt<half>;
 #ifdef ENABLE_BF16
-template class DecoderCrossAttentionLayer<__nv_bfloat16>;
+template class DecoderCrossAttentionLayerOpt<__nv_bfloat16>;
 #endif
 
 }  // namespace fastertransformer

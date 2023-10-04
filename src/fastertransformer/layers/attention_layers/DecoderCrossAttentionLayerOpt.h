@@ -17,11 +17,13 @@
 #pragma once
 
 #include "src/fastertransformer/layers/attention_layers/BaseAttentionLayer.h"
+#include "src/fastertransformer/kernels/layernorm_kernels.h"
+#include "src/fastertransformer/utils/nccl_utils.h"
 
 namespace fastertransformer {
 
 template<typename T>
-class DecoderCrossAttentionLayer: public BaseAttentionLayer<T> {
+class DecoderCrossAttentionLayerOpt: public BaseAttentionLayer<T> {
 private:
     // metadata
     const size_t head_num_;
@@ -53,7 +55,7 @@ protected:
     T* mem_cache_buf_ = nullptr;
 
 public:
-    DecoderCrossAttentionLayer(size_t           max_batch_size,
+    DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                size_t           head_num,
                                size_t           size_per_head,
                                cudaStream_t     stream,
@@ -61,7 +63,7 @@ public:
                                IAllocator*      allocator,
                                bool             is_free_buffer_after_forward);
 
-    DecoderCrossAttentionLayer(size_t           max_batch_size,
+    DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                size_t           head_num,
                                size_t           size_per_head,
                                const float      q_scaling,
@@ -70,7 +72,7 @@ public:
                                IAllocator*      allocator,
                                bool             is_free_buffer_after_forward);
 
-    DecoderCrossAttentionLayer(size_t           max_batch_size,
+    DecoderCrossAttentionLayerOpt(size_t           max_batch_size,
                                size_t           head_num,
                                size_t           size_per_head,
                                size_t           d_model,
@@ -80,12 +82,15 @@ public:
                                IAllocator*      allocator,
                                bool             is_free_buffer_after_forward);
 
-    DecoderCrossAttentionLayer(DecoderCrossAttentionLayer<T> const& attention_layer);
+    DecoderCrossAttentionLayerOpt(DecoderCrossAttentionLayerOpt<T> const& attention_layer);
 
-    ~DecoderCrossAttentionLayer();
+    ~DecoderCrossAttentionLayerOpt();
 
     void
     forward(TensorMap* output_tensors, TensorMap* input_tensors, const AttentionWeight<T>* attention_weights) override;
+
+    void
+    forward(TensorMap* output_tensors, TensorMap* input_tensors, const AttentionWeight<T>* attention_weights, const LayerNormWeight<T>* layernorm_weights);
 };
 
 }  // namespace fastertransformer

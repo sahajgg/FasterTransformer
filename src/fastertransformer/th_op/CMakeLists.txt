@@ -34,6 +34,7 @@ add_subdirectory(bert)
 add_subdirectory(deberta)
 add_subdirectory(zcode_encoder)
 add_subdirectory(zcode_decoding)
+add_subdirectory(cross_attention_kernel)
 
 add_library(th_transformer SHARED
             $<TARGET_OBJECTS:th_bart>
@@ -53,6 +54,7 @@ add_library(th_transformer SHARED
             $<TARGET_OBJECTS:th_vit>
             $<TARGET_OBJECTS:th_zcode_encoder>
             $<TARGET_OBJECTS:th_zcode_decoding>
+            $<TARGET_OBJECTS:th_cross_kernel>
 )
 target_link_libraries(th_transformer PUBLIC "${TORCH_LIBRARIES}"
                       th_bart
@@ -72,6 +74,7 @@ target_link_libraries(th_transformer PUBLIC "${TORCH_LIBRARIES}"
                       th_vit
                       th_zcode_encoder
                       th_zcode_decoding
+                      th_cross_kernel
 )
 
 if(ENABLE_FP8)

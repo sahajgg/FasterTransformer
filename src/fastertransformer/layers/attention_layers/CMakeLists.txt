@@ -29,6 +29,11 @@ set_property(TARGET DecoderCrossAttentionLayer PROPERTY POSITION_INDEPENDENT_COD
 set_property(TARGET DecoderCrossAttentionLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
 target_link_libraries(DecoderCrossAttentionLayer PUBLIC -lcublas -lcudart cublasMMWrapper memory_utils decoder_masked_multihead_attention)
 
+add_library(DecoderCrossAttentionLayerOpt STATIC DecoderCrossAttentionLayerOpt.cu)
+set_property(TARGET DecoderCrossAttentionLayerOpt PROPERTY POSITION_INDEPENDENT_CODE  ON)
+set_property(TARGET DecoderCrossAttentionLayerOpt PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
+target_link_libraries(DecoderCrossAttentionLayerOpt PUBLIC -lcublas -lcudart layernorm_kernels cublasMMWrapper memory_utils decoder_masked_multihead_attention)
+
 add_library(ZcodeDecoderCrossAttentionLayer STATIC ZcodeDecoderCrossAttentionLayer.cu)
 set_property(TARGET ZcodeDecoderCrossAttentionLayer PROPERTY POSITION_INDEPENDENT_CODE  ON)
 set_property(TARGET ZcodeDecoderCrossAttentionLayer PROPERTY CUDA_RESOLVE_DEVICE_SYMBOLS  ON)
